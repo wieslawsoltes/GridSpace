@@ -27,7 +27,9 @@ This ledger describes the implemented 0.2.0 alpha, not complete Excel fidelity. 
 | Ribbon/dialogs | Custom Office-style shell and reusable compound editors; not pixel-identical Excel or every control recreated from first principles |
 | Accessibility | Named commands and active-cell description; no complete virtualized grid automation provider |
 
-See [Data tools and structural edits](parity-data-tools.md) for detailed behavior and API examples.
+The reusable `OfficeChoiceBox` owns dropdown preview/commit/cancel input so nested choices do not submit parent dialogs. Sort levels fit the dialog width and expose reorder/remove controls.
+
+See [Data tools and structural edits](parity-data-tools.md) and [shared formulas and choice controls](shared-formulas.md) for detailed behavior and API examples.
 
 ## Formula engine
 
@@ -48,7 +50,7 @@ Conditional rules and filters use this same engine. Value-list filters compare i
 | `.xlsx` | Supported cells/formulas/styles, sizes, merges/view metadata, names, inline validation, charts, conditional rules, differential styles, value/custom filters and sort levels | A newly generated workbook containing the supported subset |
 | `.xls`, `.xlsb`, `.xlsm` | Not supported | Not supported |
 
-XLSX writing is not package-preserving editing. Unknown parts, extension records, drawing types, macros, pivot caches, connections, themes, signatures and advanced charts are not losslessly retained. Unsupported conditional types, discontiguous/oversized applies-to ranges, advanced thresholds and theme-based differential styles are skipped with warnings where detected. Shared formula followers remain imported cached values; array/spill formulas remain unsupported. Absence of a warning is not proof of complete preservation.
+XLSX writing is not package-preserving editing. Unknown parts, extension records, drawing types, macros, pivot caches, connections, themes, signatures and advanced charts are not losslessly retained. Unsupported conditional types, discontiguous/oversized applies-to ranges, advanced thresholds and theme-based differential styles are skipped with warnings where detected. Valid shared-formula groups expand into independent formulas with relative/mixed/absolute reference translation, even when followers precede the master in XML. Invalid, ambiguous or out-of-range groups retain typed cached results with warnings; missing cached results become explicit errors. What-if data tables retain cached results but are not recalculated. Array/spill formulas remain unsupported. Absence of a warning is not proof of complete preservation.
 
 Standard OOXML encodes one `row.hidden` bit. GridSpace's optional extension preserves manual versus filtered visibility, sort-header metadata and negative data-bar color in its own roundtrips. External XLSX files cannot unambiguously distinguish manual hiding on a row that also fails a filter; import warns about this. Consumers ignoring the extension receive the standard supported workbook representation, not full native state. Unknown external extension data is not retained.
 
@@ -56,7 +58,7 @@ Generated representative files are checked with the Open XML SDK validator in CI
 
 ## Bounds and scalability
 
-Native input is bounded to 32 MB of text, 256 worksheets and 200,000 stored cells per sheet. File input is bounded to 32 MB before decoding; ZIP/XML handling has separate expansion/part limits. Most rectangular edits, formula ranges, conditional ranges and sorts are limited to 100,000 cells. Filtering supports at most 100,000 data rows, 256 filter columns and 10,000 explicitly selected values. A sheet has at most 256 conditional rules and 64 sort levels. CSV export measures the full A1-to-last-used-cell rectangle, not merely populated cells.
+Native input is bounded to 32 MB of text, 256 worksheets and 200,000 stored cells per sheet. File input is bounded to 32 MB before decoding; ZIP/XML handling has separate expansion/part limits. Shared-formula expansion has an additional workbook-wide budget of 33,554,432 UTF-16 characters and does not allocate absent cells implied by a master range. Most rectangular edits, formula ranges, conditional ranges and sorts are limited to 100,000 cells. Filtering supports at most 100,000 data rows, 256 filter columns and 10,000 explicitly selected values. A sheet has at most 256 conditional rules and 64 sort levels. CSV export measures the full A1-to-last-used-cell rectangle, not merely populated cells.
 
 Rendering a far-away cell does not allocate the intervening grid. This does not imply million-cell transaction or calculation performance: JSON snapshot history, revision-wide cache invalidation and metadata scans remain document-size-dependent. Conditional statistics cache by workbook revision and are recomputed after document edits.
 

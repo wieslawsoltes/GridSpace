@@ -10,8 +10,11 @@
 - Stable multi-level value sorting with header/case options, blank-last ordering and formula translation.
 - Bounded multi-row/column deletion and insertion, whole-interval reference transforms, metadata/rule rebasing and atomic rollback on overflow.
 - Supported XLSX conditional-rule/differential-style, AutoFilter and sort-state interchange, plus GridSpace visibility metadata.
+- Bounded, order-independent shared-formula expansion with mixed/absolute reference translation, recalculation and independent-formula export.
+- Typed cached-result recovery for malformed shared groups and unsupported what-if data tables; missing results become explicit errors.
+- Reusable virtualized `OfficeChoiceBox` with preview, commit, cancel and owned keyboard routing in nested tool dialogs.
 - Independent Open XML SDK validation, engine/raster/interchange regressions and physical-input browser tests for the new tools.
-- Data-tool user/developer guide and updated compatibility ledger.
+- Data-tool and shared-formula user/developer guides and an updated compatibility ledger.
 
 ### Fixed
 
@@ -20,10 +23,12 @@
 - Single-cell sort/chart/table commands use the relevant data region rather than decorative title merges.
 - Find Previous now searches backward rather than always returning the first match.
 - Command search and ribbon route new data tools through the same dispatcher.
+- Sort editors use flexible columns rather than clipped, horizontally scrolling choice hit targets.
+- Choice keyboard input is handled before native list/button activation and surrounding dialog submission.
 - Font asset fetching no longer depends on shared unauthenticated GitHub API quotas; both transports require the pinned content hash.
 
 ## 0.1.0-alpha.1
 
 Initial Uno/Skia spreadsheet workbench with eight packable libraries, native/browser hosts, sparse geometry, formulas, transactions, cell editing, formatting, basic data tools/charts, native/CSV/XLSX-subset IO and local recovery. Added CI, GitHub Pages deployment, package generation, release workflow, documentation and pinned application font assets.
 
-Neither version has complete Excel feature, file, keyboard, accessibility or pixel-level parity. See [compatibility](docs/compatibility.md).
+No release claims full Excel parity. See the compatibility ledger for remaining boundaries.
