@@ -1,0 +1,24 @@
+name: Engine tests
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'global.json', 'Directory.Build.props', '.github/workflows/core.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Test calculation and document engines
+        run: dotnet test tests/GridSpace.Tests/GridSpace.Tests.csproj -c Release --logger 'trx;LogFileName=engine.trx' --results-directory artifacts/tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: engine-tests
+          path: artifacts/tests
