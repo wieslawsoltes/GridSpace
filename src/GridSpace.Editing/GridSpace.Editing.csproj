@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><IsPackable>true</IsPackable><Description>Transactional spreadsheet editing, bounded undo/redo, fill, clipboard, filtering and sheet operations.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../GridSpace.Formulas/GridSpace.Formulas.csproj" /></ItemGroup></Project>

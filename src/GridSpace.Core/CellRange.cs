@@ -1,15 +1,17 @@
+using System.Text.Json.Serialization;
+
 namespace GridSpace.Core;
 
 public readonly record struct CellRange(CellAddress Start, CellAddress End)
 {
-    public int Top => Math.Min(Start.Row, End.Row);
-    public int Bottom => Math.Max(Start.Row, End.Row);
-    public int Left => Math.Min(Start.Column, End.Column);
-    public int Right => Math.Max(Start.Column, End.Column);
-    public long Count => (long)(Bottom - Top + 1) * (Right - Left + 1);
+    [JsonIgnore] public int Top => Math.Min(Start.Row, End.Row);
+    [JsonIgnore] public int Bottom => Math.Max(Start.Row, End.Row);
+    [JsonIgnore] public int Left => Math.Min(Start.Column, End.Column);
+    [JsonIgnore] public int Right => Math.Max(Start.Column, End.Column);
+    [JsonIgnore] public long Count => (long)(Bottom - Top + 1) * (Right - Left + 1);
     public bool Contains(CellAddress a) => a.Row >= Top && a.Row <= Bottom && a.Column >= Left && a.Column <= Right;
     public bool Intersects(CellRange other) => Top <= other.Bottom && Bottom >= other.Top && Left <= other.Right && Right >= other.Left;
-    public CellRange Normalized => new(new(Top, Left), new(Bottom, Right));
+    [JsonIgnore] public CellRange Normalized => new(new(Top, Left), new(Bottom, Right));
     public override string ToString() => Start == End ? Start.ToString() : $"{new CellAddress(Top, Left)}:{new CellAddress(Bottom, Right)}";
     public static CellRange Parse(string text)
     {
