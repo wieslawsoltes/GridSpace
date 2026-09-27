@@ -1,0 +1,24 @@
+name: Verify toolchain
+on:
+  push:
+    paths: ['.github/workflows/environment.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query official package feeds
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          for package in ['uno.sdk','uno.winui','skiasharp','skiasharp.views.uno.winui','skiasharp.views.uno.winui.skia','microsoft.net.test.sdk','xunit','xunit.runner.visualstudio']:
+              try:
+                  data=json.load(urllib.request.urlopen(f'https://api.nuget.org/v3-flatcontainer/{package}/index.json'))
+                  stable=[v for v in data['versions'] if '-' not in v]
+                  print(package,stable[-5:])
+              except Exception as ex: print(package,str(ex))
+          data=json.load(urllib.request.urlopen('https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json'))
+          print('dotnet',data['latest-sdk'])
+          PY
