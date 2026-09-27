@@ -25,7 +25,8 @@ public sealed class GridViewport
     public void Refresh(Worksheet sheet)
     {
         Columns = new(CellAddress.MaxColumns, 88, sheet.ColumnWidths, sheet.HiddenColumns);
-        Rows = new(CellAddress.MaxRows, 24, sheet.RowHeights, sheet.HiddenRows);
+        var hidden = sheet.FilteredRows.Count == 0 ? sheet.HiddenRows : sheet.HiddenRows.Union(sheet.FilteredRows).ToHashSet();
+        Rows = new(CellAddress.MaxRows, 24, sheet.RowHeights, hidden);
         FrozenColumns = Math.Clamp(sheet.FrozenColumns, 0, CellAddress.MaxColumns - 1);
         FrozenRows = Math.Clamp(sheet.FrozenRows, 0, CellAddress.MaxRows - 1);
         ScrollTo(ScrollX, ScrollY);
@@ -75,10 +76,7 @@ public sealed class GridViewport
     }
     public void EnsureVisible(CellAddress address)
     {
-        var left = Columns.Position(address.Column);
-        var top = Rows.Position(address.Row);
-        var x = ScrollX;
-        var y = ScrollY;
+        var left = Columns.Position(address.Column); var top = Rows.Position(address.Row); var x = ScrollX; var y = ScrollY;
         if (address.Column >= FrozenColumns)
         {
             if (left < x + Columns.Position(FrozenColumns)) x = left - Columns.Position(FrozenColumns);

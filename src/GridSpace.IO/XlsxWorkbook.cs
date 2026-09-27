@@ -8,7 +8,7 @@ using GridSpace.Formulas;
 
 namespace GridSpace.IO;
 
-/// <summary>Office Open XML transitional workbook subset. Never executes macros or follows external relationships.</summary>
+/// <summary>Bounded Office Open XML transitional workbook interchange. Never executes macros or follows external relationships.</summary>
 public static partial class XlsxWorkbook
 {
     private static readonly XNamespace S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -17,7 +17,7 @@ public static partial class XlsxWorkbook
     private static readonly XNamespace T = "http://schemas.openxmlformats.org/package/2006/content-types";
     private const string RelBase = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
     private static string F(double value) => value.ToString("G17", CultureInfo.InvariantCulture);
-    private static double Number(XAttribute? attribute, double fallback = 0) => double.TryParse(attribute?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) ? n : fallback;
+    private static double Number(XAttribute? attribute, double fallback = 0) => double.TryParse(attribute?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n) ? n : fallback;
     private static int Int(XAttribute? attribute, int fallback = 0) => int.TryParse(attribute?.Value, out var n) ? n : fallback;
     private static XElement E(string name, params object?[] children) => new(S + name, children);
     private static XDocument Xml(ZipArchive zip, string path)
@@ -30,7 +30,8 @@ public static partial class XlsxWorkbook
     }
     private static void WritePart(ZipArchive zip, string path, XElement root)
     {
-        var entry = zip.CreateEntry(path, CompressionLevel.Optimal); using var stream = entry.Open();
+        var entry = zip.CreateEntry(path, CompressionLevel.Optimal);
+        using var stream = entry.Open();
         using var writer = XmlWriter.Create(stream, new() { Encoding = new UTF8Encoding(false), Indent = false });
         new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root).Save(writer);
     }
@@ -60,18 +61,23 @@ public static partial class XlsxWorkbook
         if ((string?)xml.Root.Element(S + "workbookPr")?.Attribute("date1904") is "1" or "true") throw new InvalidDataException("The 1904 date system is not supported. Convert the workbook to the 1900 date system first.");
         var strings = zip.GetEntry("xl/sharedStrings.xml") is null ? [] : Xml(zip, "xl/sharedStrings.xml").Root!.Elements(S + "si").Select(si => string.Concat(si.Descendants(S + "t").Select(t => t.Value))).ToArray();
         var styles = ReadStyles(zip); var relationships = Relationships(zip, "xl/workbook.xml");
-        var book = new Workbook { Sheets = [], Title = "Imported workbook" }; var warnings = new List<string>();
+        var book = new Workbook { Sheets = [], Title = "Imported workbook" };
+        var warnings = new List<string>();
+        var differentials = ReadDifferentials(zip, warnings);
+        var explicitVisibility = new HashSet<Worksheet>();
         foreach (var info in xml.Root.Element(S + "sheets")?.Elements(S + "sheet") ?? [])
         {
+            if (book.Sheets.Count >= 256) throw new InvalidDataException("A maximum of 256 sheets is supported.");
             var id = (string?)info.Attribute(R + "id") ?? "";
             if (!relationships.TryGetValue(id, out var path)) throw new InvalidDataException("Unresolved worksheet relationship.");
             var sheet = new Worksheet { Name = (string?)info.Attribute("name") ?? "Sheet" + (book.Sheets.Count + 1) };
-            var data = Xml(zip, path); var root = data.Root!;
+            var root = Xml(zip, path).Root!;
             foreach (var row in root.Element(S + "sheetData")?.Elements(S + "row") ?? [])
             {
                 var rowIndex = Int(row.Attribute("r"), 1) - 1;
+                if (rowIndex < 0 || rowIndex >= CellAddress.MaxRows) throw new InvalidDataException("Invalid worksheet row.");
                 if (row.Attribute("ht") is not null) sheet.RowHeights[rowIndex] = Math.Clamp(Number(row.Attribute("ht")) * 96 / 72, 16, 600);
-                if ((string?)row.Attribute("hidden") == "1") sheet.HiddenRows.Add(rowIndex);
+                if (Flag(row.Attribute("hidden"))) sheet.HiddenRows.Add(rowIndex);
                 foreach (var cell in row.Elements(S + "c"))
                 {
                     var address = CellAddress.Parse((string?)cell.Attribute("r") ?? throw new InvalidDataException("Cell address missing."));
@@ -100,21 +106,22 @@ public static partial class XlsxWorkbook
                 for (var c = first; c <= last; c++)
                 {
                     if (col.Attribute("width") is not null) sheet.ColumnWidths[c] = Math.Clamp(Number(col.Attribute("width"), 12) * 7 + 5, 24, 1000);
-                    if ((string?)col.Attribute("hidden") == "1") sheet.HiddenColumns.Add(c);
+                    if (Flag(col.Attribute("hidden"))) sheet.HiddenColumns.Add(c);
                 }
             }
             foreach (var merge in root.Element(S + "mergeCells")?.Elements(S + "mergeCell") ?? []) sheet.Merges.Add(CellRange.Parse((string?)merge.Attribute("ref") ?? "A1"));
             var view = root.Element(S + "sheetViews")?.Element(S + "sheetView"); var pane = view?.Element(S + "pane");
             if ((string?)pane?.Attribute("state") is "frozen" or "frozenSplit") { sheet.FrozenRows = Int(pane.Attribute("ySplit")); sheet.FrozenColumns = Int(pane.Attribute("xSplit")); }
             sheet.ShowGridLines = (string?)view?.Attribute("showGridLines") != "0";
-            sheet.FilterRange = (string?)root.Element(S + "autoFilter")?.Attribute("ref");
             foreach (var validation in root.Element(S + "dataValidations")?.Elements(S + "dataValidation") ?? [])
             {
                 var f = validation.Element(S + "formula1")?.Value ?? ""; var range = (string?)validation.Attribute("sqref") ?? "";
                 if ((string?)validation.Attribute("type") == "list" && f.StartsWith('"') && f.EndsWith('"') && !range.Contains(' ')) sheet.ValidationLists[range] = f[1..^1].Split(',');
                 else warnings.Add("Only inline list data validation is supported.");
             }
-            if (root.Elements(S + "conditionalFormatting").Any()) warnings.Add("Conditional formatting rules are not imported.");
+            ReadFilters(root, sheet, warnings);
+            ReadConditionalFormats(root, sheet, differentials, warnings);
+            if (ReadDataToolExtension(root, sheet)) explicitVisibility.Add(sheet);
             if (root.Element(S + "tableParts") is not null) warnings.Add("Excel tables are imported as cells; structured references and table metadata are not supported.");
             ReadCharts(zip, path, root, sheet, warnings);
             book.Sheets.Add(sheet);
@@ -126,11 +133,14 @@ public static partial class XlsxWorkbook
         if (zip.Entries.Any(e => e.FullName.Contains("externalLink", StringComparison.OrdinalIgnoreCase))) warnings.Add("External links were not followed.");
         if (zip.Entries.Any(e => e.FullName.Contains("vbaProject", StringComparison.OrdinalIgnoreCase))) warnings.Add("Macros were ignored and will not be saved.");
         warnings.Add("XLSX interoperability is a subset. Use a native .gridspace copy to preserve GridSpace-specific state; keep the original Excel file.");
-        book.Attach(); return new(book, warnings.Distinct().ToArray());
+        book.Attach();
+        RestoreFilterVisibility(book, explicitVisibility, warnings);
+        return new(book, warnings.Distinct().ToArray());
     }
     public static byte[] Write(Workbook book)
     {
         book.Attach(); var engine = new CalculationEngine(book); var styles = new List<CellStyle> { CellStyle.Default };
+        var differentials = new List<DifferentialStyle>();
         foreach (var style in book.Sheets.SelectMany(s => s.Cells.Values).Select(c => c.Style).Distinct()) if (!styles.Contains(style)) styles.Add(style);
         if (styles.Count > 10000) throw new InvalidOperationException("XLSX export is limited to 10,000 distinct styles.");
         using var output = new MemoryStream();
@@ -156,11 +166,11 @@ public static partial class XlsxWorkbook
                 if (cols.HasElements) root.Add(cols);
                 var data = E("sheetData");
                 var grouped = sheet.Cells.Select(p => (Address: CellAddress.Parse(p.Key), Cell: p.Value)).GroupBy(p => p.Address.Row).ToDictionary(g => g.Key, g => g.OrderBy(c => c.Address.Column).ToArray());
-                foreach (var r in grouped.Keys.Concat(sheet.RowHeights.Keys).Concat(sheet.HiddenRows).Distinct().Order())
+                foreach (var r in grouped.Keys.Concat(sheet.RowHeights.Keys).Concat(sheet.HiddenRows).Concat(sheet.FilteredRows).Distinct().Order())
                 {
                     var row = E("row", new XAttribute("r", r + 1));
                     if (sheet.RowHeights.TryGetValue(r, out var height)) row.Add(new XAttribute("ht", F(height * 72 / 96)), new XAttribute("customHeight", 1));
-                    if (sheet.HiddenRows.Contains(r)) row.Add(new XAttribute("hidden", 1));
+                    if (sheet.IsRowHidden(r)) row.Add(new XAttribute("hidden", 1));
                     foreach (var item in grouped.GetValueOrDefault(r, []))
                     {
                         var cell = E("c", new XAttribute("r", item.Address), new XAttribute("s", styles.IndexOf(item.Cell.Style)));
@@ -176,17 +186,20 @@ public static partial class XlsxWorkbook
                     data.Add(row);
                 }
                 root.Add(data);
-                if (sheet.FilterRange is { } filter) root.Add(E("autoFilter", new XAttribute("ref", filter)));
+                if (WriteAutoFilter(sheet) is { } filter) root.Add(filter);
+                else if (WriteSortState(sheet) is { } sort) root.Add(sort);
                 if (sheet.Merges.Count > 0) root.Add(E("mergeCells", new XAttribute("count", sheet.Merges.Count), sheet.Merges.Select(m => E("mergeCell", new XAttribute("ref", m)))));
+                WriteConditionalFormats(sheet, root, differentials);
                 if (sheet.ValidationLists.Count > 0) root.Add(E("dataValidations", new XAttribute("count", sheet.ValidationLists.Count), sheet.ValidationLists.Select(p => E("dataValidation", new XAttribute("type", "list"), new XAttribute("allowBlank", 1), new XAttribute("showErrorMessage", 1), new XAttribute("sqref", p.Key), E("formula1", "\"" + string.Join(',', p.Value) + "\"")))));
                 WriteCharts(zip, sheet, n, root, engine, Type);
+                WriteDataToolExtension(sheet, root);
                 WritePart(zip, "xl/worksheets/sheet" + n + ".xml", root);
             }
             if (book.Names.Count > 0) workbook.Add(E("definedNames", book.Names.Select(p => E("definedName", new XAttribute("name", p.Key), p.Value.TrimStart('=')))));
             workbook.Add(E("calcPr", new XAttribute("calcId", 191029), new XAttribute("fullCalcOnLoad", 1), new XAttribute("forceFullCalc", 1)));
             rels.Add(Relationship("styles", "styles", "styles.xml"));
             WritePart(zip, "xl/workbook.xml", workbook); WritePart(zip, "xl/_rels/workbook.xml.rels", rels);
-            WritePart(zip, "xl/styles.xml", WriteStyles(styles)); WritePart(zip, "[Content_Types].xml", types);
+            WritePart(zip, "xl/styles.xml", AppendDifferentials(WriteStyles(styles), differentials)); WritePart(zip, "[Content_Types].xml", types);
         }
         return output.ToArray();
     }
