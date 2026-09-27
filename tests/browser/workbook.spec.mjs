@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
+import { workbenchHeaderCoverage } from './png-probe.mjs';
 
 const address = process.env.GRIDSPACE_URL || 'http://127.0.0.1:4173/GridSpace/';
 const state = page => page.evaluate(() => globalThis.gridSpaceDiagnostics);
 const errors = new WeakMap();
 
 async function goToCell(page, cell) {
-  // Physical input goes through Uno's actual controls; diagnostics are read-only.
   await page.mouse.click(48, 204);
   await page.keyboard.press('Control+A');
   await page.keyboard.type(cell);
@@ -26,8 +26,10 @@ test.beforeEach(async ({ page }) => {
   page.on('console', message => { if (message.type() === 'error') console.log('browser:', message.text()); });
   const url = new URL(address); url.searchParams.set('test', '1');
   await page.goto(url.href, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => globalThis.gridSpaceDiagnostics?.ready && globalThis.gridSpaceDiagnostics.width > 500, { timeout: 60000 });
+  await page.waitForFunction(() => globalThis.gridSpaceDiagnostics?.ready && globalThis.gridSpaceDiagnostics.width > 500, null, { timeout: 60000 });
   await expect(page.locator('canvas').first()).toBeVisible();
+  await expect.poll(async () => workbenchHeaderCoverage(await page.screenshot()), { timeout: 60000, message: 'Wait for actual rendered workbench, not only initialized state behind the splash.' }).toBeGreaterThan(.7);
+  expect((await state(page)).fontFamilies).toBeGreaterThan(0);
 });
 test.afterEach(async ({ page }, info) => {
   await fs.mkdir('artifacts/screenshots', { recursive: true });

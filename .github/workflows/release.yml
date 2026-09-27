@@ -1,0 +1,130 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version, without the v prefix
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release version
+        id: version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$REQUESTED_VERSION"
+          if [ "$EVENT_NAME" = push ]; then VERSION="${REF_NAME#v}"; fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then echo 'Use a valid numeric SemVer with an optional prerelease suffix.' >&2; exit 1; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then echo 'prerelease=true' >> "$GITHUB_OUTPUT"; else echo 'prerelease=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare browser toolchain and verified fonts
+        run: |
+          dotnet workload install wasm-tools --skip-manifest-update
+          python3 scripts/fetch-assets.py
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Test engines and publish browser application
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          dotnet test tests/GridSpace.Tests -c Release --logger 'trx;LogFileName=release.trx' --results-directory artifacts/tests -p:Version="$VERSION"
+          dotnet publish src/GridSpace.App -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/GridSpace/ -p:Version="$VERSION"
+          python3 scripts/collect-site.py artifacts/publish artifacts/site
+          python3 scripts/serve-site.py --directory artifacts/site --port 4173 > artifacts/server.log 2>&1 &
+          npm run test:browser
+      - name: Pack libraries and release archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/release
+          for project in src/*/*.csproj; do
+            case "$project" in */GridSpace.App/*) continue;; esac
+            dotnet pack "$project" -c Release -o artifacts/release -p:Version="$VERSION"
+          done
+          git archive --format=zip --output="artifacts/release/GridSpace-$VERSION-source.zip" HEAD
+          (cd artifacts/site && zip -qr "../release/GridSpace-$VERSION-browser.zip" .)
+          (cd artifacts/release && sha256sum *.nupkg *.snupkg *.zip > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GridSpace-release
+          path: artifacts/release
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GridSpace-release-validation
+          path: |
+            artifacts/tests
+            artifacts/screenshots
+            artifacts/test-results
+            artifacts/playwright-report
+            artifacts/browser-results.xml
+            artifacts/server.log
+          if-no-files-found: ignore
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GridSpace-release
+          path: release
+      - name: Verify release checksums
+        run: cd release && sha256sum -c SHA256SUMS.txt
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.package.outputs.tag }}
+          PRERELEASE: ${{ needs.package.outputs.prerelease }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "$PRERELEASE" = true ]; then EXTRA+=(--prerelease); fi
+          gh release create "$TAG" release/* --target "$SOURCE_SHA" --title "GridSpace $TAG" --generate-notes "${EXTRA[@]}"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish packages when a NuGet key is configured
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$NUGET_API_KEY" ]; then echo 'No NuGet key configured; packages are available as GitHub release assets.'; exit 0; fi
+          for package in release/*.nupkg; do
+            dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          done

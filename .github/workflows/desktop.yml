@@ -22,5 +22,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - name: Fetch verified application font assets
+        run: python scripts/fetch-assets.py
       - name: Build shared native host
         run: dotnet build src/GridSpace.App/GridSpace.App.csproj -f net10.0-desktop -c Release -p:GridSpaceDesktopOnly=true

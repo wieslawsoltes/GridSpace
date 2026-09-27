@@ -39,8 +39,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install WebAssembly toolchain
-        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Install WebAssembly toolchain and verified font assets
+        run: |
+          dotnet workload install wasm-tools --skip-manifest-update
+          python3 scripts/fetch-assets.py
       - name: Publish real Uno WebAssembly application
         run: |
           dotnet publish src/GridSpace.App/GridSpace.App.csproj -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/GridSpace/

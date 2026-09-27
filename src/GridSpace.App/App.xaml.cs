@@ -5,6 +5,7 @@ using GridSpace.IO;
 using GridSpace.Workbench;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace GridSpace.App;
 
@@ -19,8 +20,7 @@ public partial class App : Application
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         _window = new Window { Title = "GridSpace" };
-        _window.Content = new Grid { Background = OfficeTheme.Brush("#FFFFFF"), Children = { new TextBlock { Text = "GridSpace", FontSize = 28, Foreground = OfficeTheme.Brush("#107C41"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } } };
-        _window.Activate();
+        _window.Content = new Grid { Background = OfficeTheme.Brush("#FFFFFF"), Children = { new TextBlock { Text = "GridSpace", FontSize = 28, Foreground = OfficeTheme.Brush("#107C41"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } } }; _window.Activate();
         try
         {
 #if __WASM__
@@ -31,7 +31,10 @@ public partial class App : Application
             var book = SampleWorkbook.Create(); string? warning = null;
             try { var recovery = await storage.ReadRecoveryAsync(); if (!string.IsNullOrWhiteSpace(recovery)) book = Workbook.FromJson(recovery); }
             catch (Exception error) { warning = "The recovery copy could not be opened: " + error.Message; }
-            var session = new SpreadsheetSession(book); _workbench = new SpreadsheetWorkbench(session, storage); _window.Content = _workbench;
+            OfficeTheme.Font = new FontFamily("ms-appx:///Assets/Fonts/Carlito-Regular.ttf#Carlito");
+            var session = new SpreadsheetSession(book); _workbench = new SpreadsheetWorkbench(session, storage);
+            await FontAssets.LoadAsync(_workbench.Surface.Renderer.Fonts);
+            _window.Content = _workbench;
 #if __WASM__
             if (BrowserFiles.IsTestMode()) _diagnostics = new BrowserDiagnostics(session, _workbench);
 #endif
@@ -46,7 +49,7 @@ public partial class App : Application
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine(error);
+            Console.Error.WriteLine(error); _workbench?.Dispose();
             _window.Content = new ScrollViewer { Content = new TextBlock { Text = "GridSpace could not start.\n\n" + error.Message + "\n\nYour recovery data has not been deleted. Reload to retry.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(35), FontSize = 16 } };
         }
     }

@@ -10,3 +10,7 @@ playwright-report/
 *.user
 *.suo
 .DS_Store
+# Content-pinned application assets are fetched by scripts/fetch-assets.py.
+src/GridSpace.App/Assets/Fonts/*.ttf
+src/GridSpace.App/Assets/Fonts/OFL.txt
+src/GridSpace.App/Assets/Fonts/*.tmp
