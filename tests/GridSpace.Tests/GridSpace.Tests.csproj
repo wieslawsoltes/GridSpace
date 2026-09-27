@@ -4,6 +4,6 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
-    <ProjectReference Include="../../src/GridSpace.Editing/GridSpace.Editing.csproj" />
+    <ProjectReference Include="../../src/GridSpace.IO/GridSpace.IO.csproj" />
   </ItemGroup>
 </Project>
