@@ -5,3 +5,4 @@ global using Microsoft.UI.Xaml.Media;
 global using Microsoft.UI.Xaml.Automation;
 global using Windows.Foundation;
 global using Windows.System;
+global using PointerDeviceType = Microsoft.UI.Input.PointerDeviceType;
