@@ -1,0 +1,46 @@
+name: Parity validation toolchain
+on:
+  push:
+    branches: [feat/arrays-performance]
+    paths: [.github/workflows/parity-toolchain.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          dotnet test tests/GridSpace.Tests -c Release
+          npm ci
+          npx playwright install chromium
+      - name: Archive only public toolchain dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/parity-tools/dotnet/sdk /tmp/parity-tools/dotnet/shared/Microsoft.NETCore.App /tmp/parity-tools/dotnet/packs
+          SDK=$(dotnet --version)
+          RUNTIME=$(dotnet --list-runtimes | awk '$1 == "Microsoft.NETCore.App" && $2 ~ /^10\./ {print $2}' | sort -V | tail -1)
+          cp /usr/share/dotnet/dotnet /tmp/parity-tools/dotnet/
+          cp -a /usr/share/dotnet/host /tmp/parity-tools/dotnet/
+          cp -a "/usr/share/dotnet/sdk/$SDK" /tmp/parity-tools/dotnet/sdk/
+          cp -a "/usr/share/dotnet/shared/Microsoft.NETCore.App/$RUNTIME" /tmp/parity-tools/dotnet/shared/Microsoft.NETCore.App/
+          cp -a /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref /tmp/parity-tools/dotnet/packs/
+          cp -a /usr/share/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64 /tmp/parity-tools/dotnet/packs/
+          cp -a "$HOME/.nuget/packages" /tmp/parity-tools/nuget
+          cp -a node_modules /tmp/parity-tools/
+          cp -a "$HOME/.cache/ms-playwright" /tmp/parity-tools/
+          tar -C /tmp/parity-tools -czf /tmp/parity-tools.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parity-tools
+          path: /tmp/parity-tools.tar.gz
+          retention-days: 1
+          compression-level: 0
