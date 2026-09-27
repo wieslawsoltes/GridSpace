@@ -2,7 +2,10 @@ using System.Text.RegularExpressions;
 
 namespace GridSpace.Controls;
 
-public sealed record OfficeChoice<T>(T Value, string Label);
+public sealed record OfficeChoice<T>(T Value, string Label)
+{
+    public override string ToString() => Label;
+}
 
 /// <summary>Consistent named input primitives for reusable spreadsheet editors.</summary>
 public static class OfficeForm
@@ -10,9 +13,9 @@ public static class OfficeForm
     public static ComboBox Choice<T>(string name, IEnumerable<OfficeChoice<T>> choices, T selected, double width = double.NaN)
     {
         var items = choices.ToArray();
-        var result = new ComboBox
+        var result = new OfficeChoiceBox
         {
-            ItemsSource = items, DisplayMemberPath = nameof(OfficeChoice<T>.Label),
+            ItemsSource = items,
             SelectedItem = items.FirstOrDefault(i => EqualityComparer<T>.Default.Equals(i.Value, selected)) ?? items.FirstOrDefault(),
             FontFamily = OfficeTheme.Font, FontSize = 13, MinHeight = 30, Width = width,
             HorizontalAlignment = HorizontalAlignment.Stretch

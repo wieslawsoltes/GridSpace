@@ -2,32 +2,38 @@
 <h1 align="center">GridSpace</h1>
 <p align="center">A local-first spreadsheet workbench.<br/>Uno Platform · SkiaSharp · C# · Desktop and WebAssembly</p>
 <p align="center"><a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml/badge.svg" alt="Build and browser validation" /></a> <a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml/badge.svg" alt="Desktop builds" /></a> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" /></p>
-<p align="center"><a href="https://wieslawsoltes.github.io/GridSpace/">Open browser app</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/compatibility.md">Compatibility</a> · <a href="docs/development.md">Development</a></p>
+<p align="center"><a href="https://wieslawsoltes.github.io/GridSpace/">Open browser app</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/compatibility.md">Compatibility</a> · <a href="docs/parity-data-tools.md">Data tools</a> · <a href="docs/development.md">Development</a></p>
 
 ## The project
 
-GridSpace combines an Excel-style ribbon, formula bar, worksheet tabs and green selection language with a real C# workbook engine. The worksheet is drawn by **SkiaSharp through Uno's `SKCanvasElement`**, not by an HTML table or a separate JavaScript spreadsheet. The desktop and browser hosts use the same model, calculation engine, transaction layer and controls.
+GridSpace combines an Excel-style ribbon, formula bar, worksheet tabs and green selection language with a real C# workbook engine. The worksheet is drawn by **SkiaSharp through Uno's `SKCanvasElement`**, not by an HTML table or a separate JavaScript spreadsheet. Desktop and browser hosts share the model, calculations, transactions and controls.
 
-The repository is an **early functional alpha**, not a complete or pixel-identical Microsoft Excel replacement. Unsupported features are not represented as completed functionality. Keep original workbooks and read the [compatibility matrix](docs/compatibility.md) before round-tripping XLSX files.
+**0.2.0-alpha.1** adds conditional formatting, compound column filters, stable multi-level sorting and transactional row/column deletion. These additions include reusable editors, live rendering, native persistence, supported XLSX interchange and regression tests. See the [data-tool guide](docs/parity-data-tools.md) for examples and boundaries.
+
+This remains a **functional alpha**, not a complete or pixel-identical Microsoft Excel replacement. Keep original workbooks and read the [compatibility matrix](docs/compatibility.md) before round-tripping XLSX files.
 
 ## What works
 
 | Area | Implemented |
 | --- | --- |
-| Workbook editing | Sparse worksheets, A1 navigation, range selection, direct cell and formula-bar editing, copy/paste, undo/redo, fill-down/right, formula translation and two-value numeric series |
-| Presentation | Custom ribbon, vector icons, formula bar, compact scrollbars, sheet tabs and status bar; formatting, wrapping, alignment, borders, merged cells, row/column sizing and AutoFit |
-| Navigation | Excel worksheet coordinate bounds, viewport culling, frozen panes, hidden-row/column geometry, wheel scrolling, zoom, touch panning and keyboard shortcuts |
-| Calculations | Arithmetic and comparison expressions, cell/range references, absolute/mixed references, cross-sheet references, names, revision-based caching, bounded evaluation and built-in functions |
-| Data tools | Sort, text-contains filtering, list validation, find/replace, cell notes, styled table ranges, worksheet insertion/copy/rename/delete |
+| Workbook editing | Sparse worksheets, A1 navigation, rectangular selection, direct cell/formula-bar editing, copy/paste, bounded undo/redo, fill-down/right, formula translation and two-value series |
+| Presentation | Custom ribbon, vector icons, formula bar, compact scrollbars, sheet tabs and status bar; fonts, wrapping, alignment, simple borders, merges, row/column sizing and AutoFit |
+| Conditional formatting | Eleven rule kinds, relative expressions, differential-style priorities, Stop If True, rule management, two/three-color scales and signed data bars |
+| Filtering | Searchable value checklist, one/two custom predicates, And/Or within a column, And across columns, wildcard escaping, independent manual/filter visibility and Reapply |
+| Sorting | Stable ordered multi-level value sorts, header and case options, blank-last ordering, formula translation and merged-range guards |
+| Structural editing | Multi-row/column insertion/deletion; surviving-range contraction; cross-sheet formulas, names, merges, validation, charts, conditional rules and freeze boundaries rebased transactionally |
+| Navigation | Sparse viewport rendering through XFD1048576, frozen panes, hidden-row/column geometry, wheel scrolling, zoom, touch panning and keyboard shortcuts |
+| Calculations | Arithmetic/comparison expressions, relative/absolute/mixed references, cross-sheet references, names, revision-based caching, bounded evaluation and common functions |
+| Worksheet tools | Find/replace, list validation, plain notes, styled table ranges, worksheet insertion/copy/rename/delete, manual hide/unhide |
 | Charts | Single-series column, bar, line and pie charts with bounded previews and XLSX chart interchange |
-| Files | Native `.gridspace` JSON, CSV/TSV and a documented XLSX subset; browser file selection/downloads and native desktop pickers |
-| Recovery | Debounced IndexedDB recovery in the browser and atomic replacement of a local recovery file on desktop |
+| Files | Native `.gridspace` JSON, CSV/TSV and a documented XLSX subset; explicit browser downloads/file selection and native desktop pickers |
+| Recovery | Debounced IndexedDB recovery in the browser; atomic local recovery-file replacement on desktop |
 
-The sample workbook contains **Revenue**, **Assumptions** and **Read me** worksheets. Change `Revenue!D6` or an assumption to exercise recalculation and chart updates.
+The sample has **Revenue**, **Assumptions** and **Read me** worksheets. Change `Revenue!D6` or an assumption to recalculate the model. Select `D6:D17` and choose **Data → Data Bars** to explore live conditional rendering. Click a table's filter-header button to open the filter editor.
 
 ## Run it
 
-The repository pins **.NET SDK 10.0.401** and **Uno SDK 6.7.30** in `global.json`. Managed and native SkiaSharp versions must remain aligned; the renderer currently uses the Uno-compatible **3.119.2** line.
+The repository pins **.NET SDK 10.0.401** and **Uno SDK 6.7.30** in `global.json`. Managed and native SkiaSharp versions must stay aligned; the renderer uses the Uno-compatible **3.119.2** line.
 
 ```bash
 git clone https://github.com/wieslawsoltes/GridSpace.git
@@ -38,7 +44,7 @@ dotnet run --project src/GridSpace.App -f net10.0-desktop \
   -p:GridSpaceDesktopOnly=true
 ```
 
-The asset command downloads content-pinned, OFL-licensed Carlito faces from the Google Fonts repository. It never copies Microsoft or host-system fonts. The application supplies the same font data to Uno and the spreadsheet renderer; logical workbook font names remain unchanged in the document.
+The asset command fetches content-pinned, OFL-licensed Carlito faces from Google Fonts. Every payload is verified against its expected Git blob hash, whether retrieved through the raw endpoint or the blob API fallback. It never copies Microsoft or host-system fonts. Uno and the spreadsheet renderer receive the same font data; logical workbook font names remain in the document.
 
 For the browser:
 
@@ -51,47 +57,53 @@ python3 scripts/serve-site.py --directory artifacts/site --port 4173
 # Open http://127.0.0.1:4173/GridSpace/
 ```
 
-Python 3 is used only by the build/development scripts. The deployed application does not require Python, Node.js, a database server or an application backend. Browser recovery is local to the origin and browser profile; it is not a cloud backup.
+Python and Node.js are development/test tools only. The deployed application requires no application backend or database server. Browser recovery is local to its origin and profile, not a cloud backup.
 
 ## Reusable libraries
 
-Each library is independently packable. The application is only a host and composition root.
+Each library is independently packable. App is the platform composition root.
 
 | Package | Target | Responsibility |
 | --- | --- | --- |
-| `GridSpace.Core` | `net10.0` | Workbook, worksheet, cell, style, range and chart contracts |
-| `GridSpace.Formulas` | `net10.0` | Parser, evaluator, built-ins, formatting and reference rewriting |
-| `GridSpace.Editing` | `net10.0` | Editing sessions, transactions, bounded history and workbook operations |
+| `GridSpace.Core` | `net10.0` | Workbook/cell/style/range contracts; axis transforms; conditional/filter/sort models |
+| `GridSpace.Formulas` | `net10.0` | Parser, evaluator, reference rewriting, number formatting, conditional formatting and filter predicates |
+| `GridSpace.Editing` | `net10.0` | Sessions, transactions, bounded history, structural edits and data-tool operations |
 | `GridSpace.IO` | `net10.0` | Native/CSV/XLSX interchange and host storage contract |
 | `GridSpace.Layout` | `net10.0` | Sparse axis indexes, frozen panes, hit-testing and viewport geometry |
-| `GridSpace.Skia` | `net10.0` | Cell, chart and selection rendering; owned typeface catalog |
-| `GridSpace.Controls` | Uno browser/desktop | Embeddable grid, custom ribbon, buttons, icons, formula bar, tabs and scrollbars |
-| `GridSpace.Workbench` | Uno browser/desktop | Complete workbench, command routing, dialogs and recovery scheduling |
+| `GridSpace.Skia` | `net10.0` | Cell, conditional style, data-bar, chart and selection rendering; owned font resources |
+| `GridSpace.Controls` | Uno browser/desktop | Embeddable grid, ribbon, buttons/icons, formula bar/tabs/scrollbars, filter/sort/conditional editors |
+| `GridSpace.Workbench` | Uno browser/desktop | Complete workbench, commands, dialogs, filter popup, rule management and local recovery |
 
-CI produces `.nupkg` and symbol packages in the **GridSpace-packages** artifact. Package generation is not a claim that the packages have been published to nuget.org. The release workflow can publish them when a `NUGET_API_KEY` repository secret is configured.
+CI generates eight `.nupkg` and eight `.snupkg` packages. Generation does not mean publication to nuget.org. The release workflow can publish when `NUGET_API_KEY` is configured.
 
-### Use the engine without a UI
+### Use the engines without a UI
 
 ```csharp
 using GridSpace.Core;
 using GridSpace.Editing;
 using GridSpace.Formulas;
 
-var book = new Workbook { Title = "Example" };
-var session = new SpreadsheetSession(book);
+var session = new SpreadsheetSession(new Workbook { Title = "Example" });
 session.SetInput("21", new CellAddress(0, 0));
 session.SetInput("=A1*2", new CellAddress(0, 1));
-
 Console.WriteLine(session.Calculation.Evaluate(session.Sheet, "B1")); // 42
-session.Select("A1:B1");
-session.ApplyStyle(style => style with { Bold = true });
-session.Undo();
 
-// Extension functions are registered by a trusted host, not by workbook text.
-session.Calculation.Register("DOUBLE", args =>
-    args.Count == 1 && args[0].TryNumber(out var value)
-        ? CalcValue.Num(value * 2)
-        : CalcValue.Error("#VALUE!"));
+session.SetConditionalFormat(new ConditionalFormatRule
+{
+    Range = "A1:B1",
+    Kind = ConditionalFormatKind.CellValue,
+    Comparison = CellComparison.GreaterThan,
+    Operand = "30",
+    Style = new DifferentialStyle { Background = "#C6EFCE", Bold = true }
+});
+var rules = new ConditionalFormattingEngine(session.Calculation);
+var address = new CellAddress(0, 1);
+var displayed = rules.Evaluate(session.Sheet, address,
+    session.Calculation.Evaluate(session.Sheet, address));
+Console.WriteLine(displayed.Style.Background); // #C6EFCE
+
+session.InsertRows(0, 2); // References and modeled metadata follow the insertion.
+session.Undo();
 ```
 
 ### Embed the Uno control
@@ -106,7 +118,7 @@ window.Content = grid;
 window.Closed += (_, _) => grid.Dispose();
 ```
 
-A host can supply its own ribbon and command routing, use `SpreadsheetRenderer` on another Skia surface, or compose `SpreadsheetWorkbench(session, storage)` with an implementation of `IWorkbookStorage`. Model mutation is single-owner; marshal edits to the owning UI thread rather than sharing a live mutable session between threads.
+A host can use its own command routing, compose the individual data-tool editors, render on another Skia surface, or host `SpreadsheetWorkbench(session, storage)` with its own `IWorkbookStorage`. Web hosts should register available font bytes with `grid.Renderer.Fonts` as the application does. A mutable session has one owning thread; use snapshots for background processing.
 
 ## Validation and delivery
 
@@ -118,16 +130,18 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-The engine suite covers formula evaluation, reference rewriting, transactions, interchange, sparse geometry, frozen panes, file bounds and headless rendering. Browser acceptance tests perform actual pointer/keyboard input, read only an opt-in diagnostic snapshot, save screenshots and verify exported data.
+Tests cover formulas, reference rewriting, rollback/history, native/XLSX interchange, conditional/filter/sort engines, structural metadata, sparse/frozen geometry and actual raster pixels. Independent **Open XML SDK schema validation** supplements the reader/writer round-trip tests; that dependency is test-only.
 
-**Build** tests and publishes the real Uno application, packs libraries, then deploys the verified browser artifact to Pages. It compares the artifact's `build-info.json` commit with the source commit and repeats browser acceptance tests against the public site. **Desktop** builds the shared host on Linux, Windows and macOS. **Release** creates versioned browser/source archives, packages, checksums and a GitHub prerelease/release.
+Browser acceptance uses physical keyboard and pointer events. A `?test=1` read-only snapshot provides model state and current control bounds, not mutation hooks. Tests exercise both the original editing flows and the new rule editor/manager, filter popup, custom-sort editor and structural deletion; screenshots and traces are retained in CI artifacts.
+
+**Build** tests and publishes the actual Uno WebAssembly application, packs libraries, then deploys a successful main-branch build to Pages. The artifact's `build-info.json` commit is verified, and the browser suite runs again against the public URL. **Desktop** builds the shared native host on Linux, Windows and macOS. **Release** creates versioned source/browser archives, packages, checksums and a GitHub release/prerelease.
 
 ## Important boundaries
 
-There is no VBA runtime, PivotTable engine, Power Query, external-data connectivity, multiplayer editing, Excel add-in host, dynamic-array spill engine, complete OOXML preservation or full print/page-layout engine. Some interactions and dialogs use Uno's platform controls under the custom workbench. Full spreadsheet-cell accessibility and exact Excel keyboard/visual parity remain unfinished.
+VBA, PivotTables, Power Query, external-data refresh, multiplayer editing, Excel add-ins, dynamic-array spilling, lossless arbitrary OOXML preservation, full print/page layout and complete virtualized-cell accessibility remain unimplemented. The custom workbench still uses Uno input/dialog primitives. Conditional-format clipboard propagation, arbitrary cell-shift deletion and advanced filter/chart variants also remain outside this increment.
 
-The alpha deliberately bounds expensive operations: 100,000 cells per bulk operation/range evaluation, 200,000 stored cells per imported sheet, 256 sheets, 32 MB native/file import, and a 200,000-cell CSV rectangle measured from A1. These are implementation safety limits, not Excel's storage limits. See [compatibility](docs/compatibility.md) for details.
+The alpha bounds expensive work: 100,000 cells per bulk edit, conditional range or sort; 100,000 filter data rows; 200,000 stored cells per imported sheet; 256 sheets; and 32 MB native/file import. See [compatibility](docs/compatibility.md) for exact subset behavior and limitations.
 
 ## License
 
-GridSpace source is [MIT licensed](LICENSE). Uno Platform, SkiaSharp, test dependencies and fetched font assets retain their own licenses. See [third-party notices](THIRD-PARTY-NOTICES.md). GridSpace is independent of Microsoft; Microsoft Excel and related names belong to their respective owners. No Microsoft logo, proprietary font or extracted Excel asset is included.
+GridSpace source is [MIT licensed](LICENSE). Dependencies and fetched font assets retain their own licenses; see [third-party notices](THIRD-PARTY-NOTICES.md). GridSpace is independent of Microsoft. No Microsoft logo, proprietary font or extracted Excel asset is included.

@@ -6,6 +6,8 @@ public sealed partial class SpreadsheetWorkbench
 {
     private async Task ExecuteCoreAsync(string id)
     {
+        // Backstage and command search also enter here; they must use the same data-tool routing as the ribbon.
+        if (await ExecuteDataToolAsync(id)) return;
         switch (id)
         {
             case "undo": Session.Undo(); break;
@@ -22,7 +24,7 @@ public sealed partial class SpreadsheetWorkbench
             case "align-left": Session.ApplyStyle(s => s with { Alignment = CellAlignment.Left }); break;
             case "align-center": Session.ApplyStyle(s => s with { Alignment = CellAlignment.Center }); break;
             case "align-right": Session.ApplyStyle(s => s with { Alignment = CellAlignment.Right }); break;
-            case "font": if (await PromptAsync("Font", "Font family", Session.SelectedStyle.FontFamily) is { } family && family.Length > 0) Session.ApplyStyle(s => s with { FontFamily = family }); break;
+            case "font": if (await PromptAsync("Font", "Font family", Session.SelectedStyle.FontFamily) is { Length: > 0 } family) Session.ApplyStyle(s => s with { FontFamily = family }); break;
             case "font-size": if (await PromptAsync("Font Size", "Size in points", Session.SelectedStyle.FontSize.ToString(CultureInfo.InvariantCulture)) is { } size) { var number = ParseNumber(size, 4, 200); Session.ApplyStyle(s => s with { FontSize = number }); } break;
             case "font-color": await PickColorAsync(false); break;
             case "fill-color": await PickColorAsync(true); break;
@@ -46,8 +48,6 @@ public sealed partial class SpreadsheetWorkbench
             case "autofit": Session.SetColumnWidth(Session.ActiveCell.Column, Surface.Renderer.MeasureColumn(Session, Session.ActiveCell.Column)); break;
             case "sort-ascending": Session.Sort(); break;
             case "sort-descending": Session.Sort(true); break;
-            case "filter": if (await PromptAsync("Filter", "Contains text in selected column (empty clears)", "") is { } query) Session.Filter(Session.ActiveCell.Column, query); break;
-            case "clear-filter": Session.Filter(Session.ActiveCell.Column, ""); break;
             case "find": await FindAsync(false); break;
             case "replace": await FindAsync(true); break;
             case "freeze": Session.Freeze(); break;
@@ -71,7 +71,7 @@ public sealed partial class SpreadsheetWorkbench
             case "add-sheet": Session.AddSheet(); break;
             case "duplicate-sheet": Session.DuplicateSheet(); break;
             case "rename-sheet": if (await PromptAsync("Rename Sheet", "Worksheet name", Session.Sheet.Name) is { } sheetName) Session.RenameSheet(sheetName); break;
-            case "delete-sheet": if (await ConfirmAsync("Delete Sheet", "Delete “" + Session.Sheet.Name + "”? This can be undone.")) Session.DeleteSheet(); break;
+            case "delete-sheet": if (await ConfirmAsync("Delete Sheet", "Delete “" + Session.Sheet.Name + "”? References become #REF!. This can be undone.")) Session.DeleteSheet(); break;
             case "sheet-menu": await SheetMenuAsync(); break;
             case "function": if (await PromptAsync("Insert Function", "Formula (for example =SUM(A1:A10))", "=SUM(" + Session.Selection + ")") is { } formula) Session.SetInput(formula); break;
             case "file": await BackstageAsync(); break;
@@ -91,8 +91,8 @@ public sealed partial class SpreadsheetWorkbench
             case "export-csv": await SaveAsync(".csv"); break;
             case "rename-workbook": if (await PromptAsync("Workbook Name", "Title", Session.Book.Title) is { } title) Session.Perform("Rename workbook", () => Session.Book.Title = title); break;
             case "command-search": await SearchCommandsAsync(); break;
-            case "help": await MessageAsync("Working with GridSpace", "Double-click a cell or press F2 to edit. Enter commits; Escape cancels.\n\nArrow keys navigate. Shift+arrows extend a range. Ctrl+C/V/X copies, pastes or cuts; Ctrl+Z/Y undoes or redoes. Ctrl+S downloads the native workbook.\n\nDrag row/column boundaries to resize. Double-click a column header to AutoFit. Drag the green fill handle to extend formulas or a two-value numeric series.\n\nUse the Name box for an address or defined name. The formula bar edits raw input. Freeze panes uses the active cell as the first scrolling row/column.\n\nXLSX support is a documented subset. Keep original files and use .gridspace for native recovery. VBA, PivotTables, Power Query, collaboration, and complete Excel compatibility are not implemented."); break;
-            case "about": await MessageAsync("About GridSpace", "GridSpace 0.1.0-alpha.1\n\nA local-first spreadsheet built with Uno Platform and SkiaSharp. Eight independently packable libraries share the same workbook model, calculations and transactions.\n\nThis is an independent implementation, not Microsoft Excel. It does not include Microsoft branding, fonts or proprietary assets.\n\nMIT License · GridSpace contributors"); break;
+            case "help": await MessageAsync("Working with GridSpace", "Double-click a cell or press F2 to edit. Enter commits; Escape cancels.\n\nArrow keys navigate. Shift+arrows extend a range. Ctrl+C/V/X copies, pastes or cuts; Ctrl+Z/Y undoes or redoes. Ctrl+S downloads the native workbook.\n\nDrag row/column boundaries to resize; double-click a column header to AutoFit. Drag the fill handle to extend formulas or a two-value numeric series.\n\nThe Data tab provides compound filters, ordered Custom Sort levels, conditional rules, scales and data bars. Click a filter-header button or press Alt+Down to edit its criteria. Clear Filters keeps manually hidden rows hidden. Use Reapply after changing filtered data.\n\nConditional formulas are relative to the upper-left applies-to cell. Manage Rules controls priorities and Stop If True. Formatting never overwrites cell values.\n\nHome and the context menu insert/delete selected rows or columns and update supported references. Full-range deletion produces #REF!; undo restores the document.\n\nXLSX support remains a subset. Keep originals and use .gridspace for native recovery. VBA, PivotTables, Power Query, collaboration and full Excel compatibility are not implemented."); break;
+            case "about": await MessageAsync("About GridSpace", "GridSpace 0.2.0-alpha.1\n\nA local-first spreadsheet built with Uno Platform and SkiaSharp. Eight independently packable libraries share the same workbook model, calculation engines and transactions.\n\nThis is an independent implementation, not Microsoft Excel. It does not include Microsoft branding, fonts or proprietary assets.\n\nMIT License · GridSpace contributors"); break;
             default: throw new InvalidOperationException("Unknown command: " + id);
         }
         Surface.RevealSelection();
@@ -104,7 +104,8 @@ public sealed partial class SpreadsheetWorkbench
     }
     private async Task SaveAsync(string extension)
     {
-        var name = new string(Session.Book.Title.Where(c => !Path.GetInvalidFileNameChars().Contains(c) && c is not '/' and not '\\').ToArray()).Trim(); if (name.Length == 0) name = "Workbook";
+        var name = new string(Session.Book.Title.Where(c => !Path.GetInvalidFileNameChars().Contains(c) && c is not '/' and not '\\').ToArray()).Trim();
+        if (name.Length == 0) name = "Workbook";
         var bytes = extension == ".xlsx" ? XlsxWorkbook.Write(Session.Book) : extension == ".csv" ? WorkbookFiles.Csv(Session.Book) : WorkbookFiles.Native(Session.Book);
         await _storage.SaveAsync(name + extension, bytes, extension == ".xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : extension == ".csv" ? "text/csv;charset=utf-8" : "application/json");
         if (extension == ".gridspace") Session.MarkSaved();

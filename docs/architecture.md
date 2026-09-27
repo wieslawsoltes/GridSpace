@@ -17,44 +17,62 @@ graph TD
     Layout --> Core
 ```
 
-Core, Formulas, Editing, IO, Layout and Skia have no Uno dependency. Controls and Workbench are Uno libraries with browser and desktop target frameworks. App owns startup, file pickers, downloads and local recovery storage. There is no alternate JavaScript workbook engine.
+The first six libraries are independent of Uno. Controls and Workbench target Uno browser/desktop. App owns startup, file pickers/downloads and local recovery storage. There is no alternate JavaScript workbook engine. Open XML SDK is a test-only validator dependency; the runtime IO implementation remains independent of it.
 
-## Model and transactions
+## Model and transaction ownership
 
-Worksheets store populated cells in an address-keyed dictionary; row heights, column widths and hidden indexes are sparse metadata. Cell values and styles are immutable records, while workbook and worksheet containers are mutable and single-owner.
+Worksheets store populated cells in address-keyed dictionaries. Axis sizes, hidden indexes and data-tool definitions are sparse metadata. Cells/styles/rule/filter/sort definitions are records; workbook and worksheet containers are mutable and single-owner.
 
-`SpreadsheetSession.Perform` is the transaction boundary. It records native JSON before and after an edit, rolls back on failure, and exposes bounded undo/redo. Nested operations join the outer transaction. History is capped at 40 entries and approximately 32 MB of UTF-16 character accounting. Snapshot history is intentionally simple and deterministic; it is not a structural-sharing persistent model and incurs O(document-size) work per transaction.
+`SpreadsheetSession.Perform` records native JSON before and after an edit, rolls back failures and provides bounded undo/redo. Nested operations join the outer transaction. History has at most 40 entries and an approximate 32-million-character accounting threshold. Snapshot history is deterministic but costs O(document size) per transaction; it is not persistent structural sharing.
 
-Document consumers subscribe to `Changed`. Restoration replaces the workbook and calculator; consumers must use `session.Book` and `session.Sheet` rather than retaining stale worksheet instances after undo, redo or load. The session is not thread-safe. Background work should operate on a serialized snapshot and return an explicit result to the model's owning thread.
+Restoring history or loading replaces the workbook and calculator. Consumers must read `session.Book` and `session.Sheet`, not retain obsolete worksheet instances. A live session is not thread-safe. Background calculations should operate on a snapshot and marshal results to the owning UI thread.
 
-## Calculation
+## Structural transforms
 
-The parser constructs an expression tree. The evaluator caches parsed formulas and calculated cells, invalidating results on workbook revision changes. It tracks active evaluation paths to detect cycles and bounds depth, range size and evaluation work. It does not use a dependency DAG or incremental topological recomputation yet.
+`AxisEdit` is the shared bounded insertion/deletion primitive. It maps an index, cell or complete rectangular interval. Partially deleted intervals contract; fully deleted intervals disappear. Insertions reject out-of-bounds stored data or range metadata instead of discarding it.
 
-Relative/absolute reference translation is shared by fill, clipboard operations, sorting and structural insertion. Workbook-defined names and quoted sheet names are resolved through the model. Host code can register trusted extension functions; workbook text cannot load assemblies, run JavaScript or issue network requests through the default evaluator.
+`FormulaReferences` recognizes A1 references and full ranges, propagates the first sheet qualifier to an unqualified second endpoint, preserves absolute/mixed markers and skips quoted string literals. The structural session operation applies the same axis transform to cells, sizes, merges, names, filter/sort ranges, validation, charts and conditional-rule regions. It rebases the rule formula before a removed top-left rule anchor is replaced with its first surviving cell. The complete operation is one transaction.
 
-## Geometry
+Deleting a worksheet rewrites supported references immediately to `#REF!`, preventing an unrelated sheet with a recycled name from resurrecting old references. The transform does not claim support for grammar the formula engine cannot represent, such as external workbook references, 3D ranges or arbitrary shifted-cell operations.
 
-`AxisLayout` stores sorted non-default indexes plus cumulative size deltas. Position lookup uses binary search. Offset-to-index lookup uses a monotonic upper-bound search that skips runs of zero-size hidden rows or columns. It does not allocate a row object for every Excel coordinate.
+## Calculation and conditional formatting
 
-`GridViewport` works in device-independent pixels. Scrolling is stored in unscaled sheet units. Frozen rows/columns form up to four independently clipped panes. The same geometry supplies renderer positions, input hit-testing, editor placement, scrollbar ranges and ensure-visible navigation. Row/column headings remain unscaled UI chrome.
+The parser builds expression trees. The calculator caches parsed formulas and values by workbook revision, tracks active evaluation paths for cycles and bounds evaluation depth/range/work. It does not yet have an incremental dependency DAG or topological dirty propagation.
 
-## Rendering and resources
+`ConditionalFormattingEngine` consumes the calculator and returns an effective style plus an optional data-bar visual. It never mutates base styles. Rules are priority ordered; nullable differential properties compose independently with first-set-wins precedence. Matching Stop If True rules terminate boolean-rule evaluation. Statistical ranges, numeric distributions and typed value frequencies are cached by workbook revision. Relative rule expressions are translated from the range's top-left anchor to the queried cell.
 
-`SpreadsheetRenderer` draws visible cell rectangles, intersecting merges, range selection, charts and headings. Chart previews are bounded. Typeface registration and native fallback lookup are isolated in `TypefaceCatalog`: registered families are retained independently from the bounded fallback cache. Paints, fonts and native handles have explicit ownership and disposal.
+Color scales interpolate supported min/median/max endpoints. Signed bars return normalized axis/start/end coordinates and a color; Skia rendering turns these pure values into clipped rectangles before drawing text. The same effective style controls AutoFit text measurements.
 
-The application downloads content-pinned Carlito faces during the build and gives the font bytes to the renderer. Uno receives the same application font resource. Workbook font-family metadata is preserved; Arial/Calibri/Aptos requests use the application's declared fallback where those proprietary fonts are not supplied.
+## Filtering and sorting
 
-The alpha renderer clips cell text and supports basic wrapping; it does not yet implement Excel's empty-neighbour overflow, complex-script shaping, rich text runs, all border styles, conditional-format rules or multi-series chart layout.
+`WorksheetFilterEngine` compiles value sets or up to two custom predicates per column. Columns combine with And. Glob-like text expressions are escaped into a nonbacktracking regular expression with bounded execution. Numeric relational filters compare numeric values; explicit value lists use invariant calculated strings.
 
-## Controls and hosting
+`Worksheet.HiddenRows` is manual visibility. `FilteredRows` is the independently evaluated filter exclusion set. Geometry uses their union. Clearing a filter only changes the exclusion set. Editing data does not automatically rerun the filter: the explicit Reapply command does; sort and structural edits reapply within their transactions.
 
-The grid is an Uno `UserControl` containing an `SKCanvasElement`, an overlay editor and custom scrollbars. Pointer gestures do not mutate row/column sizes until release. Fill and edit commits use the session. A native Uno TextBox is used while editing to retain platform text input services.
+Multi-level sorting snapshots key values and cell records before writing. Type order, direction, blank-last behavior and original row as the final tie-breaker produce stable deterministic results. Row-relative formulas translate after movement. Merged ranges and over-budget operations are rejected before mutation.
 
-The custom Office button has its own template and focus states. Ribbon descriptions are data-driven, and command IDs are dispatched by the workbench. Formula bar, tabs, status bar and ribbon can be hosted separately. Dialogs use Uno ContentDialog and standard text-input primitives; they are not independent OS windows.
+## Geometry and rendering
 
-`IWorkbookStorage` separates file and recovery policy from UI. Browser storage uses IndexedDB and explicit download/file-input gestures. Desktop recovery replaces a temporary file atomically. Recovery is a single local slot, not versioned cloud storage. The workbench serializes writes and reschedules when edits arrive during an outstanding write.
+`AxisLayout` stores sorted non-default indexes plus cumulative size deltas. Position lookup uses binary search; offset-to-index uses a monotonic upper-bound search and skips long runs of zero-sized hidden rows. There is no object for every sheet coordinate.
 
-## Browser testing
+`GridViewport` uses device-independent pixels and unscaled sheet scroll offsets. Frozen rows/columns produce up to four independently clipped panes. Rendering, hit-testing, editor placement, scrollbars and ensure-visible navigation share the same geometry. Headings remain unscaled UI chrome.
 
-`?test=1` enables read-only diagnostic state and disables persistent recovery access so public-site acceptance does not overwrite user documents. Tests still enter data through actual Uno keyboard/pointer input. No document-mutation bridge is exposed. The published `build-info.json` identifies the exact source commit; deployment validates that marker before running public-site tests.
+`SpreadsheetRenderer` draws visible cells, intersecting merges, selections, conditional visuals, bounded charts and headings. `TypefaceCatalog` owns registered families independently from its bounded native fallback cache. Native resources have explicit disposal. The application supplies content-verified Carlito faces to Uno and Skia; logical workbook font-family metadata is retained.
+
+Remaining rendering gaps include empty-neighbour text overflow, full complex-script shaping, rich text, every border/chart variant and exact Excel pixel metrics.
+
+## Controls and host integration
+
+The grid combines `SKCanvasElement`, an overlay text editor and custom scrollbars. Pointer resize previews do not commit until release. The native Uno TextBox used during editing retains platform text-input services.
+
+Library-owned Office buttons have templates/focus states; ribbon tabs/groups/commands are data-driven. `FilterEditorControl`, `SortEditorControl` and `ConditionalFormatEditorControl` are reusable compound editors. Workbench composes them into header flyouts, dialogs and a rules manager. Keyboard accelerators and canvas filter-button hit-testing route through the same session commands. Some input/dialog primitives remain Uno controls rather than bespoke low-level replacements.
+
+`IWorkbookStorage` isolates platform IO. Browser recovery uses IndexedDB; desktop recovery replaces a temporary file atomically. Workbench serializes recovery writes and schedules another write when edits arrive during one already in progress. Recovery remains a single local slot.
+
+## Interchange and validation
+
+The XLSX reader/writer handles its explicit OOXML subset with bounded ZIP/XML processing. Standard differential styles, conditional rules, filter columns and sort state are serialized in worksheet schema order. Unsupported variants produce import notes. An optional GridSpace extension retains details that standard row-hidden state cannot disambiguate; arbitrary foreign extensions are not preserved.
+
+Engine tests include semantic invariants, seeded transform regressions and pixel assertions. Independent Open XML SDK schema validation catches format errors that self-roundtrips alone could miss. Browser tests perform physical UI input using opt-in read-only state and geometry snapshots. `?test=1` disables recovery access and exposes no mutation bridge. Production startup never attaches the diagnostics timer.
+
+Deployment requires a successful main build, verifies `build-info.json` provenance and repeats the physical-input browser suite against the public Pages URL. Native CI builds all three desktop platforms, but does not replace manual testing of native pickers, IME, accessibility or physical touch hardware.

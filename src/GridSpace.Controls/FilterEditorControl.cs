@@ -25,12 +25,15 @@ public sealed class FilterEditorControl : UserControl
 
     public FilterEditorControl(int column, IReadOnlyList<string> values, ColumnFilter? current = null)
     {
-        if (values.Count > 10000) throw new InvalidOperationException("More than 10,000 distinct values: use a custom filter through the Data command.");
         _column = column;
-        _values = values.Concat(current?.Values ?? []).Append("").Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).Select(v => new ValueOption(v)).ToArray();
+        var checklistAvailable = values.Count <= 10000;
+        _values = (checklistAvailable ? values : Array.Empty<string>()).Concat(current?.Values ?? []).Append("")
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).Select(v => new ValueOption(v)).ToArray();
         _selected = current?.Values is { } accepted ? accepted.ToHashSet(StringComparer.OrdinalIgnoreCase) : _values.Select(v => v.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (current?.Values is not null && current.IncludeBlank) _selected.Add("");
-        _mode = OfficeForm.Choice("Filter mode", new[] { new OfficeChoice<int>(0, "Select values"), new OfficeChoice<int>(1, "Custom conditions") }, current?.First is null ? 0 : 1);
+        _mode = OfficeForm.Choice("Filter mode", checklistAvailable
+            ? new[] { new OfficeChoice<int>(0, "Select values"), new OfficeChoice<int>(1, "Custom conditions") }
+            : new[] { new OfficeChoice<int>(1, "Custom conditions") }, checklistAvailable && current?.First is null ? 0 : 1);
         _first = OfficeForm.EnumChoice("Filter first operator", current?.First?.Operator ?? FilterOperator.Contains);
         _second = OfficeForm.EnumChoice("Filter second operator", current?.Second?.Operator ?? FilterOperator.LessThan);
         _join = OfficeForm.Choice("Filter join", new[] { new OfficeChoice<bool>(true, "And — both conditions"), new OfficeChoice<bool>(false, "Or — either condition") }, current?.And ?? true);
@@ -40,6 +43,7 @@ public sealed class FilterEditorControl : UserControl
         _search.PlaceholderText = "Search values";
         var root = new StackPanel { Spacing = 8, MinWidth = 260, MaxWidth = 340 };
         root.Children.Add(_mode);
+        if (!checklistAvailable) root.Children.Add(new TextBlock { Text = "More than 10,000 distinct values. Use conditions to filter the full range without truncating a checklist.", TextWrapping = TextWrapping.Wrap, FontSize = 12 });
         var valuesPanel = new StackPanel { Spacing = 5 };
         valuesPanel.Children.Add(_search);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
