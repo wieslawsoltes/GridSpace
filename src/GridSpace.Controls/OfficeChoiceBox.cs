@@ -8,32 +8,6 @@ namespace GridSpace.Controls;
 /// </summary>
 public sealed class OfficeChoiceBox : UserControl
 {
-    private sealed class ChoiceButton(OfficeChoiceBox owner) : OfficeButton
-    {
-        protected override void OnKeyDown(KeyRoutedEventArgs e)
-        {
-            if (!owner.HandleKey(e, false)) base.OnKeyDown(e);
-        }
-        protected override void OnKeyUp(KeyRoutedEventArgs e)
-        {
-            if (e.Key is VirtualKey.Enter or VirtualKey.Space) e.Handled = true;
-            else base.OnKeyUp(e);
-        }
-    }
-
-    private sealed class ChoiceList(OfficeChoiceBox owner) : ListView
-    {
-        protected override void OnKeyDown(KeyRoutedEventArgs e)
-        {
-            if (!owner.HandleKey(e, true)) base.OnKeyDown(e);
-        }
-        protected override void OnKeyUp(KeyRoutedEventArgs e)
-        {
-            if (e.Key is VirtualKey.Enter or VirtualKey.Space or VirtualKey.Escape) e.Handled = true;
-            else base.OnKeyUp(e);
-        }
-    }
-
     public static readonly DependencyProperty ItemsSourceProperty = DependencyProperty.Register(
         nameof(ItemsSource), typeof(IEnumerable), typeof(OfficeChoiceBox),
         new PropertyMetadata(null, (sender, _) => ((OfficeChoiceBox)sender).ItemsChanged()));
@@ -44,9 +18,9 @@ public sealed class OfficeChoiceBox : UserControl
         nameof(SelectedItem), typeof(object), typeof(OfficeChoiceBox),
         new PropertyMetadata(null, (sender, _) => ((OfficeChoiceBox)sender).ItemChanged()));
 
-    private readonly ChoiceButton _button;
+    private readonly OfficeButton _button;
     private readonly TextBlock _label = OfficeTheme.Label("", 13);
-    private readonly ChoiceList _list;
+    private readonly ListView _list;
     private readonly Flyout _popup;
     private object[] _items = [];
     private bool _synchronizing;
@@ -66,7 +40,7 @@ public sealed class OfficeChoiceBox : UserControl
         IsTabStop = false;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
-        _button = new ChoiceButton(this)
+        _button = new OfficeButton
         {
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Background = OfficeTheme.Brush("#FFFFFF"), BorderBrush = OfficeTheme.Brush("#B8B8B8"),
@@ -83,14 +57,15 @@ public sealed class OfficeChoiceBox : UserControl
         _button.Click += (_, _) => { if (IsDropDownOpen) Close(false); else Open(); };
         Content = _button;
 
-        _list = new ChoiceList(this)
+        _list = new ListView
         {
             SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true,
             FontFamily = OfficeTheme.Font, FontSize = 13,
             HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
         var itemStyle = new Style(typeof(ListViewItem));
-        itemStyle.Setters.Add(new Setter(MinHeightProperty, 30d));
+        itemStyle.Setters.Add(new Setter(HeightProperty, 32d));
+        itemStyle.Setters.Add(new Setter(MinHeightProperty, 32d));
         itemStyle.Setters.Add(new Setter(PaddingProperty, new Thickness(8, 4, 8, 4)));
         itemStyle.Setters.Add(new Setter(HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         _list.ItemContainerStyle = itemStyle;
@@ -99,6 +74,12 @@ public sealed class OfficeChoiceBox : UserControl
             var index = Array.IndexOf(_items, args.ClickedItem);
             if (index >= 0) { _list.SelectedIndex = index; Close(true); }
         };
+        // Tunnel input before ListView/Button default handlers or a surrounding dialog can consume it.
+        // The header can retain focus briefly while the popup is opening; both paths use the same preview state.
+        _button.PreviewKeyDown += (_, args) => HandleKey(args);
+        _list.PreviewKeyDown += (_, args) => HandleKey(args);
+        _button.PreviewKeyUp += ConsumeActivationKey;
+        _list.PreviewKeyUp += ConsumeActivationKey;
         _popup = new Flyout { Content = _list };
         _popup.Opened += (_, _) =>
         {
@@ -158,7 +139,7 @@ public sealed class OfficeChoiceBox : UserControl
         _list.ItemsSource = _items;
         _list.SelectedIndex = Math.Max(0, SelectedIndex);
         _list.Width = Math.Max(140, Math.Min(Math.Max(ActualWidth, 200), XamlRoot.Size.Width - 64));
-        _list.Height = Math.Max(30, Math.Min(Math.Min(270, _items.Length * 30d), XamlRoot.Size.Height - 100));
+        _list.Height = Math.Max(30, Math.Min(Math.Min(272, _items.Length * 32d + 8), XamlRoot.Size.Height - 100));
         IsDropDownOpen = true; _restoreFocus = false; _nextFocus = null;
         try { _popup.ShowAt(_button); }
         catch { IsDropDownOpen = false; throw; }
@@ -173,10 +154,11 @@ public sealed class OfficeChoiceBox : UserControl
         if (commit && selected >= 0 && selected != SelectedIndex) SetSelection(selected);
     }
 
-    private bool HandleKey(KeyRoutedEventArgs e, bool popup)
+    private bool HandleKey(KeyRoutedEventArgs e)
     {
         var shift = Down(VirtualKey.Shift);
         var alt = Down(VirtualKey.Menu);
+        var popup = IsDropDownOpen;
         var index = popup ? _list.SelectedIndex : SelectedIndex;
         switch (e.Key)
         {
@@ -224,6 +206,11 @@ public sealed class OfficeChoiceBox : UserControl
             _list.ScrollIntoView(_items[index]);
         }
         else if (SelectedIndex != index) SetSelection(index);
+    }
+
+    private static void ConsumeActivationKey(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is VirtualKey.Enter or VirtualKey.Space or VirtualKey.Escape) e.Handled = true;
     }
 
     private static bool Down(VirtualKey key) =>

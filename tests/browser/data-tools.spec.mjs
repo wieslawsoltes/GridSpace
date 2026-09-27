@@ -16,10 +16,13 @@ async function text(page, id, value) {
 }
 async function choose(page, id, index) {
   await click(page, id);
+  await expect.poll(async () => (await state(page)).controls[id]?.expanded).toBe(true);
   await page.keyboard.press('Home');
   for (let i = 0; i < index; i++) await page.keyboard.press('ArrowDown');
+  await expect.poll(async () => (await state(page)).controls[id]?.previewIndex).toBe(index);
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await state(page)).controls[id]?.selectedIndex).toBe(index);
+  await expect.poll(async () => (await state(page)).controls[id]?.expanded).toBe(false);
 }
 async function select(page, range) {
   await text(page, 'Namebox', range); await page.keyboard.press('Enter');
@@ -101,7 +104,6 @@ test('sorts by region and descending units with an ordered level editor', async 
 
 test('deletes selected rows and restores data and formulas through undo redo', async ({ page }) => {
   await select(page, 'D6:D7');
-  // Delete commands are reached through the cell context menu on small ribbon viewports.
   await page.mouse.click(345, 384, { button: 'right' });
   await page.keyboard.press('Escape');
   await click(page, 'Command-delete-row');
@@ -109,4 +111,36 @@ test('deletes selected rows and restores data and formulas through undo redo', a
   await select(page, 'F6'); await expect.poll(async () => (await state(page)).value).toBe('197500');
   await click(page, 'Quick-undo'); await select(page, 'D6'); await expect.poll(async () => (await state(page)).value).toBe('126');
   await click(page, 'Quick-redo'); await select(page, 'D6'); await expect.poll(async () => (await state(page)).value).toBe('158');
+});
+
+test('choice Escape rolls back only its preview and never submits the sort dialog', async ({ page }) => {
+  await select(page, 'B5:I17'); await click(page, 'RibbonTabData'); await click(page, 'Command-custom-sort');
+  await click(page, 'SortColumn0');
+  await expect.poll(async () => (await state(page)).controls.SortColumn0?.expanded).toBe(true);
+  await page.keyboard.press('End');
+  await expect.poll(async () => (await state(page)).controls.SortColumn0?.previewIndex).toBe(7);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await state(page)).controls.SortColumn0?.expanded).toBe(false);
+  expect((await state(page)).controls.SortColumn0.selectedIndex).toBe(0);
+  expect((await state(page)).overlayOpen).toBe(true);
+  expect((await state(page)).sortLevels).toBe(0);
+  await choose(page, 'SortColumn0', 1);
+  expect((await state(page)).sortLevels).toBe(0);
+  await click(page, 'CloseButton');
+  await expect.poll(async () => (await state(page)).overlayOpen).toBe(false);
+  expect((await state(page)).canUndo).toBe(false);
+});
+
+test('sort levels move and remove without losing their selected columns', async ({ page }) => {
+  await select(page, 'B5:I17'); await click(page, 'RibbonTabData'); await click(page, 'Command-custom-sort');
+  await choose(page, 'SortColumn0', 1);
+  await click(page, 'SortAddLevel'); await choose(page, 'SortColumn1', 2);
+  await click(page, 'SortMoveUp1');
+  await expect.poll(async () => (await state(page)).controls.SortColumn0?.selectedIndex).toBe(2);
+  expect((await state(page)).controls.SortColumn1.selectedIndex).toBe(1);
+  await click(page, 'SortRemove0');
+  await expect.poll(async () => (await state(page)).controls.SortColumn0?.selectedIndex).toBe(1);
+  await expect.poll(async () => !!(await state(page)).controls.SortColumn1).toBe(false);
+  await click(page, 'PrimaryButton');
+  await expect.poll(async () => (await state(page)).sortLevels).toBe(1);
 });
