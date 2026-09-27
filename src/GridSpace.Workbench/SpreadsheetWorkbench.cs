@@ -29,15 +29,32 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
         _ribbon.SetTabs(WorkbookRibbon.Create()); _ribbon.CommandRequested += RunCommand;
         _formula.EditingStarted += () => _formulaAddress = Session.ActiveCell;
         _formula.CommitInput = text => Try(() => Session.SetInput(text, _formulaAddress));
-        _formula.Navigate = address => Try(() => { Surface.CommitEdit(); if (Session.Book.Names.TryGetValue(address, out var range)) { var bang = range.LastIndexOf('!'); if (bang >= 0) { var name = range[..bang].Trim('='); if (name.StartsWith('\'')) name = name[1..^1].Replace("''", "'"); var target = Session.Book.FindSheet(name); if (target is not null) Session.SwitchSheet(Session.Book.Sheets.IndexOf(target)); range = range[(bang + 1)..]; } Session.Select(range); } else Session.Select(address); Surface.RevealSelection(); });
+        _formula.Navigate = address => Try(() =>
+        {
+            if (!Surface.CommitEdit()) return;
+            if (Session.Book.Names.TryGetValue(address, out var range))
+            {
+                var bang = range.LastIndexOf('!');
+                if (bang >= 0)
+                {
+                    var name = range[..bang].Trim('='); if (name.StartsWith('\'')) name = name[1..^1].Replace("''", "'");
+                    var target = Session.Book.FindSheet(name);
+                    if (target is not null) Session.SwitchSheet(Session.Book.Sheets.IndexOf(target)); range = range[(bang + 1)..];
+                }
+                Session.Select(range);
+            }
+            else Session.Select(address);
+            Surface.RevealSelection();
+        });
         _formula.FocusGridRequested += Surface.FocusGrid; _formula.FunctionRequested += () => RunCommand("function");
         Surface.CommandRequested += RunCommand; Surface.Error += message => ShowStatus(message, true); Surface.ViewChanged += UpdateStatus;
         Surface.ContextRequested += ShowCellMenu;
         _tabs.SheetSelected += index => { if (_formula.Commit() && Surface.CommitEdit()) { Session.SwitchSheet(index); Surface.FocusGrid(); } };
         _tabs.AddRequested += () => RunCommand("add-sheet");
-        _tabs.SheetContextRequested += index => { Session.SwitchSheet(index); RunCommand("sheet-menu"); };
+        _tabs.SheetContextRequested += index => { if (_formula.Commit() && Surface.CommitEdit()) { Session.SwitchSheet(index); RunCommand("sheet-menu"); } };
         _statusBar.ZoomRequested += Surface.SetZoom;
         Session.Changed += Changed; _recoveryTimer.Tick += RecoveryTick;
+        InitializeDataTools();
         Loaded += (_, _) => { Update(); Surface.FocusGrid(); };
         Update();
         void Add(UIElement element, int row) { Grid.SetRow(element, row); root.Children.Add(element); }
@@ -51,7 +68,8 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
         foreach (var item in new[] { ("save", "Save", OfficeIconKind.Save), ("undo", "Undo", OfficeIconKind.Undo), ("redo", "Redo", OfficeIconKind.Redo) })
         {
             var button = new OfficeButton { Content = new OfficeIcon { Kind = item.Item3, Ink = "#FFFFFF", Width = 18, Height = 18 }, Background = OfficeTheme.Brush("#107C41"), Width = 30, Height = 30 };
-            AutomationProperties.SetName(button, item.Item2); ToolTipService.SetToolTip(button, item.Item2); button.Click += (_, _) => RunCommand(item.Item1); quick.Children.Add(button);
+            AutomationProperties.SetName(button, item.Item2); AutomationProperties.SetAutomationId(button, "Quick-" + item.Item1);
+            ToolTipService.SetToolTip(button, item.Item2); button.Click += (_, _) => RunCommand(item.Item1); quick.Children.Add(button);
         }
         bar.Children.Add(quick);
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 13, VerticalAlignment = VerticalAlignment.Center }; title.Children.Add(_title); title.Children.Add(_saved); Grid.SetColumn(title, 1); bar.Children.Add(title);
@@ -92,7 +110,8 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
         try
         {
             if (!_formula.Commit() || !Surface.CommitEdit()) return;
-            await ExecuteCoreAsync(id); Update();
+            if (!await ExecuteDataToolAsync(id)) await ExecuteCoreAsync(id);
+            Update();
         }
         catch (Exception error) { ShowStatus(error.Message, true); }
         finally { _executing = false; }
@@ -100,7 +119,7 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
     private void ShowCellMenu(Windows.Foundation.Point point)
     {
         var menu = new MenuFlyout();
-        foreach (var item in new[] { ("cut", "Cut"), ("copy", "Copy"), ("paste", "Paste"), ("paste-values", "Paste Values"), ("clear", "Clear Contents"), ("format-cells", "Format Cells…"), ("insert-row", "Insert Row"), ("insert-column", "Insert Column"), ("note", "New Note…") })
+        foreach (var item in new[] { ("cut", "Cut"), ("copy", "Copy"), ("paste", "Paste"), ("paste-values", "Paste Values"), ("clear", "Clear Contents"), ("format-cells", "Format Cells…"), ("conditional-format", "Conditional Formatting…"), ("insert-row", "Insert Rows"), ("insert-column", "Insert Columns"), ("delete-row", "Delete Rows"), ("delete-column", "Delete Columns"), ("note", "New Note…") })
         {
             var command = new MenuFlyoutItem { Text = item.Item2 }; command.Click += (_, _) => RunCommand(item.Item1); menu.Items.Add(command);
         }
@@ -109,6 +128,6 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true; _recoveryTimer.Stop(); _recoveryTimer.Tick -= RecoveryTick;
-        Session.Changed -= Changed; Surface.ViewChanged -= UpdateStatus; Surface.CommandRequested -= RunCommand; Surface.ContextRequested -= ShowCellMenu; Surface.Dispose();
+        Session.Changed -= Changed; Surface.ViewChanged -= UpdateStatus; Surface.CommandRequested -= RunCommand; Surface.ContextRequested -= ShowCellMenu; Surface.FilterRequested -= FilterRequested; Surface.Dispose();
     }
 }
