@@ -68,14 +68,14 @@ public sealed partial class SpreadsheetSession
         var column = Math.Clamp(ActiveCell.Column, range.Left, range.Right);
         var first = range.Top + (header ? 1 : 0);
         if (range.Bottom < first) return;
-        var data = Enumerable.Range(first, range.Bottom - first + 1).Select(r => new { Row = r, Value = Calculation.Evaluate(Sheet, new(r, column)), Cells = Enumerable.Range(range.Left, range.Right - range.Left + 1).Select(c => Sheet.Get(new(r, c))).ToArray() }).ToArray();
+        var data = Enumerable.Range(first, range.Bottom - first + 1).Select(r => new { Row = r, Value = Calculation.Evaluate(Sheet, new CellAddress(r, column)), Cells = Enumerable.Range(range.Left, range.Right - range.Left + 1).Select(c => Sheet.Get(new CellAddress(r, c))).ToArray() }).ToArray();
         var comparer = Comparer<CalcValue>.Create((a, b) => a.Kind == ValueKind.Number && b.Kind == ValueKind.Number ? a.Number.CompareTo(b.Number) : string.Compare(a.ToString(), b.ToString(), StringComparison.OrdinalIgnoreCase));
         var ordered = (descending ? data.OrderByDescending(x => x.Value, comparer) : data.OrderBy(x => x.Value, comparer)).ToArray();
         Perform("Sort " + (descending ? "descending" : "ascending"), () =>
         {
             for (var i = 0; i < ordered.Length; i++) for (var c = 0; c < ordered[i].Cells.Length; c++)
             {
-                var cell = ordered[i].Cells[c]; Sheet.Set(new(first + i, range.Left + c), cell with { Input = FormulaReferences.Translate(cell.Input, first + i - ordered[i].Row, 0) });
+                var cell = ordered[i].Cells[c]; Sheet.Set(new CellAddress(first + i, range.Left + c), cell with { Input = FormulaReferences.Translate(cell.Input, first + i - ordered[i].Row, 0) });
             }
         });
     }
@@ -85,7 +85,7 @@ public sealed partial class SpreadsheetSession
         Sheet.FilterRange = range.ToString();
         for (var r = range.Top + 1; r <= range.Bottom; r++)
         {
-            if (query == "" || Calculation.Evaluate(Sheet, new(r, column)).ToString().Contains(query, StringComparison.OrdinalIgnoreCase)) Sheet.HiddenRows.Remove(r);
+            if (query == "" || Calculation.Evaluate(Sheet, new CellAddress(r, column)).ToString().Contains(query, StringComparison.OrdinalIgnoreCase)) Sheet.HiddenRows.Remove(r);
             else Sheet.HiddenRows.Add(r);
         }
     });
@@ -107,7 +107,7 @@ public sealed partial class SpreadsheetSession
         if (found.Length == 0) return null;
         var current = (long)ActiveCell.Row * CellAddress.MaxColumns + ActiveCell.Column;
         var result = next ? found.FirstOrDefault(a => (long)a.Row * CellAddress.MaxColumns + a.Column > current, found[0]) : found[0];
-        Select(new(result, result)); return result;
+        Select(new CellRange(result, result)); return result;
     }
     public int ReplaceAll(string find, string replacement)
     {
@@ -125,7 +125,7 @@ public sealed partial class SpreadsheetSession
     public void AutoSum()
     {
         var end = ActiveCell; var first = end.Row - 1;
-        while (first >= 0 && Sheet.Get(new(first, end.Column)).Input != "") first--;
+        while (first >= 0 && Sheet.Get(new CellAddress(first, end.Column)).Input != "") first--;
         if (first == end.Row - 1) { SetInput("=SUM(A1:A1)"); return; }
         SetInput($"=SUM({new CellAddress(first + 1, end.Column)}:{new CellAddress(end.Row - 1, end.Column)})");
     }

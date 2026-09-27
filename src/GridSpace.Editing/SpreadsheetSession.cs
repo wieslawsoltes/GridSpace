@@ -36,7 +36,7 @@ public sealed partial class SpreadsheetSession
     {
         var from = extend ? Selection.End : ActiveCell;
         var to = new CellAddress(Math.Clamp(from.Row + rows, 0, CellAddress.MaxRows - 1), Math.Clamp(from.Column + columns, 0, CellAddress.MaxColumns - 1));
-        Select(new(extend ? Selection.Start : to, to));
+        Select(new CellRange(extend ? Selection.Start : to, to));
     }
     public void Perform(string name, Action action)
     {
@@ -93,7 +93,7 @@ public sealed partial class SpreadsheetSession
     {
         var range = Selection.Normalized;
         var cells = range.Cells().Select(Sheet.Get).ToArray();
-        var text = DelimitedText.Write(Enumerable.Range(range.Top, range.Bottom - range.Top + 1).Select(r => Enumerable.Range(range.Left, range.Right - range.Left + 1).Select(c => Calculation.Evaluate(Sheet, new(r, c)).ToString())));
+        var text = DelimitedText.Write(Enumerable.Range(range.Top, range.Bottom - range.Top + 1).Select(r => Enumerable.Range(range.Left, range.Right - range.Left + 1).Select(c => Calculation.Evaluate(Sheet, new CellAddress(r, c)).ToString())));
         Clipboard = new(Sheet.Name, range, cells, text); Notify("Copied"); return Clipboard;
     }
     public void Paste(string text, bool valuesOnly = false)
@@ -108,17 +108,17 @@ public sealed partial class SpreadsheetSession
                 for (var r = 0; r < height; r++) for (var c = 0; c < width; c++)
                 {
                     var cell = block.Cells[r * width + c];
-                    Sheet.Set(new(target.Row + r, target.Column + c), cell with { Input = FormulaReferences.Translate(cell.Input, target.Row - block.Source.Top, target.Column - block.Source.Left) });
+                    Sheet.Set(new CellAddress(target.Row + r, target.Column + c), cell with { Input = FormulaReferences.Translate(cell.Input, target.Row - block.Source.Top, target.Column - block.Source.Left) });
                 }
             });
-            Select(new(target, new(target.Row + height - 1, target.Column + width - 1))); return;
+            Select(new CellRange(target, new CellAddress(target.Row + height - 1, target.Column + width - 1))); return;
         }
         var rows = DelimitedText.Parse(text); var cols = rows.Max(r => r.Length); CheckExtent(target, rows.Count, cols);
         Perform("Paste text", () => { for (var r = 0; r < rows.Count; r++) for (var c = 0; c < rows[r].Length; c++)
         {
             var address = new CellAddress(target.Row + r, target.Column + c); Sheet.Set(address, Sheet.Get(address) with { Input = rows[r][c] });
         } });
-        Select(new(target, new(target.Row + rows.Count - 1, target.Column + cols - 1)));
+        Select(new CellRange(target, new CellAddress(target.Row + rows.Count - 1, target.Column + cols - 1)));
     }
     private static void CheckExtent(CellAddress target, int rows, int columns)
     {
@@ -132,8 +132,8 @@ public sealed partial class SpreadsheetSession
         Perform("Fill cells", () =>
         {
             var height = source.Bottom - source.Top + 1; var width = source.Right - source.Left + 1;
-            var first = Calculation.Evaluate(Sheet, new(source.Top, source.Left));
-            var next = Calculation.Evaluate(Sheet, new(Math.Min(source.Top + 1, source.Bottom), source.Left));
+            var first = Calculation.Evaluate(Sheet, new CellAddress(source.Top, source.Left));
+            var next = Calculation.Evaluate(Sheet, new CellAddress(Math.Min(source.Top + 1, source.Bottom), source.Left));
             var useSeries = series && width == 1 && height == 2 && first.Kind == ValueKind.Number && next.Kind == ValueKind.Number;
             foreach (var a in destination.Cells())
             {
