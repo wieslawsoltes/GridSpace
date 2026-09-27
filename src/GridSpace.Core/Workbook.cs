@@ -26,6 +26,7 @@ public sealed class Workbook
             if (!names.Add(sheet.Name)) throw new InvalidDataException("Worksheet names must be unique.");
             if (sheet.Cells.Count > 200_000) throw new InvalidDataException("The current per-sheet import limit is 200,000 stored cells.");
             foreach (var key in sheet.Cells.Keys) _ = CellAddress.Parse(key);
+            sheet.ValidateMetadata();
             sheet.Cells = new(sheet.Cells, StringComparer.OrdinalIgnoreCase);
             sheet.Changed = Touch;
         }

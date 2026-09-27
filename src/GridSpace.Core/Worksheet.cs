@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace GridSpace.Core;
 
-public sealed class Worksheet
+public sealed partial class Worksheet
 {
     public string Name { get; set; } = "Sheet1";
     public Dictionary<string, Cell> Cells { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -10,6 +10,13 @@ public sealed class Worksheet
     public Dictionary<int, double> RowHeights { get; set; } = [];
     public HashSet<int> HiddenRows { get; set; } = [];
     public HashSet<int> HiddenColumns { get; set; } = [];
+    public HashSet<int> FilteredRows { get; set; } = [];
+    public List<ColumnFilter> Filters { get; set; } = [];
+    public List<ConditionalFormatRule> ConditionalFormats { get; set; } = [];
+    public List<SortLevel> SortLevels { get; set; } = [];
+    public string? SortRange { get; set; }
+    public bool SortHasHeader { get; set; } = true;
+    public bool SortCaseSensitive { get; set; }
     public List<CellRange> Merges { get; set; } = [];
     public List<ChartSpec> Charts { get; set; } = [];
     public Dictionary<string, string[]> ValidationLists { get; set; } = [];
@@ -31,8 +38,9 @@ public sealed class Worksheet
         Changed?.Invoke();
     }
     public void Set(string address, string input) { var a = CellAddress.Parse(address); Set(a, Get(a) with { Input = input }); }
+    public bool IsRowHidden(int row) => HiddenRows.Contains(row) || FilteredRows.Contains(row);
     public double ColumnWidth(int column) => HiddenColumns.Contains(column) ? 0 : ColumnWidths.GetValueOrDefault(column, 88);
-    public double RowHeight(int row) => HiddenRows.Contains(row) ? 0 : RowHeights.GetValueOrDefault(row, 24);
+    public double RowHeight(int row) => IsRowHidden(row) ? 0 : RowHeights.GetValueOrDefault(row, 24);
     [JsonIgnore] public CellRange UsedRange
     {
         get
