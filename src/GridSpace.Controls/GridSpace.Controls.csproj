@@ -1,0 +1,10 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="'$(GridSpaceDesktopOnly)' == 'true'">net10.0-desktop</TargetFrameworks>
+    <UnoSingleProject>true</UnoSingleProject><OutputType>Library</OutputType><GenerateLibraryLayout>true</GenerateLibraryLayout>
+    <UnoFeatures>SkiaRenderer;</UnoFeatures><IsPackable>true</IsPackable>
+    <Description>Custom Uno spreadsheet surface, ribbon, formula bar, sheet tabs, scrollbars and Office-style controls.</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../GridSpace.Skia/GridSpace.Skia.csproj" /></ItemGroup>
+</Project>

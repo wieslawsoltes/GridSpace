@@ -1,0 +1,26 @@
+namespace GridSpace.Workbench;
+
+public static class WorkbookRibbon
+{
+    private static RibbonCommand C(string id, string label, OfficeIconKind icon, bool large = false, string? shortcut = null, bool enabled = true) => new(id, label, icon, large, shortcut, enabled);
+    private static RibbonGroup G(string name, params RibbonCommand[] commands) => new(name, commands);
+    public static IReadOnlyList<RibbonTab> Create() =>
+    [
+        new("Home", [
+            G("Clipboard", C("paste", "Paste", OfficeIconKind.Paste, true, "Ctrl+V"), C("cut", "Cut", OfficeIconKind.Cut, shortcut:"Ctrl+X"), C("copy", "Copy", OfficeIconKind.Copy, shortcut:"Ctrl+C"), C("paste-values", "Paste Values", OfficeIconKind.Paste)),
+            G("Font", C("font", "Arial  ▾", OfficeIconKind.Font), C("bold", "Bold", OfficeIconKind.Bold, shortcut:"Ctrl+B"), C("italic", "Italic", OfficeIconKind.Italic, shortcut:"Ctrl+I"), C("font-size", "11  ▾", OfficeIconKind.Font), C("underline", "Underline", OfficeIconKind.Underline, shortcut:"Ctrl+U"), C("borders", "Borders", OfficeIconKind.Border), C("fill-color", "Fill Color", OfficeIconKind.Fill), C("font-color", "Font Color", OfficeIconKind.Font), C("format-cells", "Format Cells", OfficeIconKind.Font, shortcut:"Ctrl+1")),
+            G("Alignment", C("align-left", "Align Left", OfficeIconKind.AlignLeft), C("align-center", "Center", OfficeIconKind.AlignCenter), C("align-right", "Align Right", OfficeIconKind.AlignRight), C("wrap", "Wrap Text", OfficeIconKind.Wrap), C("merge", "Merge & Center", OfficeIconKind.Merge), C("unmerge", "Unmerge", OfficeIconKind.Merge)),
+            G("Number", C("number-format", "General  ▾", OfficeIconKind.Grid), C("currency", "Accounting", OfficeIconKind.Grid), C("percent", "Percent Style", OfficeIconKind.Grid)),
+            G("Styles", C("format-table", "Format as\nTable", OfficeIconKind.Grid, true), C("cell-style", "Cell\nStyles", OfficeIconKind.Fill, true)),
+            G("Cells", C("insert-row", "Insert Row", OfficeIconKind.InsertRow), C("insert-column", "Insert Column", OfficeIconKind.InsertColumn), C("autofit", "AutoFit Width", OfficeIconKind.Grid)),
+            G("Editing", C("autosum", "AutoSum", OfficeIconKind.Sum), C("fill-down", "Fill Down", OfficeIconKind.Copy), C("clear", "Clear", OfficeIconKind.Clear), C("sort-ascending", "Sort A to Z", OfficeIconKind.Sort), C("filter", "Filter", OfficeIconKind.Filter), C("find", "Find & Select", OfficeIconKind.Find))
+        ]),
+        new("Insert", [G("Tables", C("format-table", "Table", OfficeIconKind.Grid, true), C("pivot", "PivotTable", OfficeIconKind.Grid, true, enabled:false)), G("Charts", C("chart-column", "Column", OfficeIconKind.Chart, true), C("chart-line", "Line", OfficeIconKind.Chart, true), C("chart-bar", "Bar", OfficeIconKind.Chart, true), C("chart-pie", "Pie", OfficeIconKind.Chart, true)), G("Text", C("note", "Note", OfficeIconKind.Note, true)), G("Worksheets", C("add-sheet", "New Sheet", OfficeIconKind.Plus, true), C("duplicate-sheet", "Move or Copy", OfficeIconKind.Copy, true))]),
+        new("Page Layout", [G("Sheet Options", C("gridlines", "Gridlines", OfficeIconKind.Grid, true), C("row-height", "Row Height", OfficeIconKind.Grid, true), C("column-width", "Column Width", OfficeIconKind.Grid, true)), G("Output", C("export-xlsx", "Export XLSX", OfficeIconKind.Save, true), C("export-csv", "Export CSV", OfficeIconKind.Save, true))]),
+        new("Formulas", [G("Function Library", C("function", "Insert\nFunction", OfficeIconKind.Sum, true), C("autosum", "AutoSum", OfficeIconKind.Sum, true)), G("Defined Names", C("define-name", "Define Name", OfficeIconKind.Font, true), C("name-manager", "Name Manager", OfficeIconKind.Grid, true)), G("Formula Auditing", C("show-formulas", "Show Formulas", OfficeIconKind.Grid, true), C("calculate", "Calculate Now", OfficeIconKind.Sum, true))]),
+        new("Data", [G("Get Data", C("open", "From File", OfficeIconKind.Open, true)), G("Sort & Filter", C("sort-ascending", "Sort A to Z", OfficeIconKind.Sort, true), C("sort-descending", "Sort Z to A", OfficeIconKind.Sort, true), C("filter", "Filter", OfficeIconKind.Filter, true), C("clear-filter", "Clear Filter", OfficeIconKind.Clear, true)), G("Data Tools", C("validation", "Data\nValidation", OfficeIconKind.Check, true))]),
+        new("Review", [G("Notes", C("note", "New Note", OfficeIconKind.Note, true), C("delete-note", "Delete Note", OfficeIconKind.Clear, true)), G("Workbook", C("rename-sheet", "Rename Sheet", OfficeIconKind.Font, true), C("delete-sheet", "Delete Sheet", OfficeIconKind.Clear, true))]),
+        new("View", [G("Show", C("gridlines", "Gridlines", OfficeIconKind.Grid, true), C("show-formulas", "Formulas", OfficeIconKind.Sum, true)), G("Zoom", C("zoom-in", "Zoom In", OfficeIconKind.Plus, true), C("zoom-out", "Zoom Out", OfficeIconKind.Find, true), C("zoom-reset", "100%", OfficeIconKind.Grid, true)), G("Window", C("freeze", "Freeze Panes", OfficeIconKind.Freeze, true), C("freeze-top", "Freeze Top Row", OfficeIconKind.Freeze, true), C("unfreeze", "Unfreeze Panes", OfficeIconKind.Grid, true))]),
+        new("Help", [G("GridSpace", C("help", "Help", OfficeIconKind.Help, true), C("sample", "Open Sample", OfficeIconKind.Open, true), C("about", "About", OfficeIconKind.Help, true))])
+    ];
+}

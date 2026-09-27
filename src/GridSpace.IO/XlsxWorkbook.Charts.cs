@@ -29,11 +29,11 @@ public static partial class XlsxWorkbook
             var categoryCache = CE("strCache", CV("ptCount", count)); var valueCache = CE("numCache", CE("formatCode", "General"), CV("ptCount", count));
             for (var i = 0; i < count; i++)
             {
-                categoryCache.Add(CE("pt", new XAttribute("idx", i), CE("v", engine.Evaluate(sheet, new(firstRow + i, range.Left)).ToString())));
-                var value = engine.Evaluate(sheet, new(firstRow + i, range.Right));
+                categoryCache.Add(CE("pt", new XAttribute("idx", i), CE("v", engine.Evaluate(sheet, new CellAddress(firstRow + i, range.Left)).ToString())));
+                var value = engine.Evaluate(sheet, new CellAddress(firstRow + i, range.Right));
                 valueCache.Add(CE("pt", new XAttribute("idx", i), CE("v", F(value.TryNumber(out var number) ? number : 0))));
             }
-            var series = CE("ser", CV("idx", 0), CV("order", 0), CE("tx", CE("v", engine.Evaluate(sheet, new(range.Top, range.Right)).ToString())), CE("cat", CE("strRef", CE("f", Ref(range.Left)), categoryCache)), CE("val", CE("numRef", CE("f", Ref(range.Right)), valueCache)));
+            var series = CE("ser", CV("idx", 0), CV("order", 0), CE("tx", CE("v", engine.Evaluate(sheet, new CellAddress(range.Top, range.Right)).ToString())), CE("cat", CE("strRef", CE("f", Ref(range.Left)), categoryCache)), CE("val", CE("numRef", CE("f", Ref(range.Right)), valueCache)));
             var plot = CE("plotArea", CE("layout"));
             var kind = spec.Kind == ChartKind.Line ? "lineChart" : spec.Kind == ChartKind.Pie ? "pieChart" : "barChart";
             var chartType = CE(kind);

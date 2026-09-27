@@ -1,0 +1,148 @@
+name: Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Test engine, documents, layout and rendering
+        run: dotnet test tests/GridSpace.Tests/GridSpace.Tests.csproj -c Release --logger 'trx;LogFileName=engine.trx' --results-directory artifacts/tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GridSpace-engine-validation
+          path: |
+            artifacts/tests
+            **/artifacts/rendering
+          if-no-files-found: ignore
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install WebAssembly toolchain
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Publish real Uno WebAssembly application
+        run: |
+          dotnet publish src/GridSpace.App/GridSpace.App.csproj -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/GridSpace/
+          python3 scripts/collect-site.py artifacts/publish artifacts/site
+      - name: Test browser interactions
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          python3 scripts/serve-site.py --directory artifacts/site --port 4173 > artifacts/server.log 2>&1 &
+          npm run test:browser
+      - name: Pack reusable libraries
+        run: |
+          for project in src/*/*.csproj; do
+            case "$project" in */GridSpace.App/*) continue;; esac
+            dotnet pack "$project" -c Release -o artifacts/packages
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GridSpace-browser
+          path: artifacts/site
+          include-hidden-files: true
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GridSpace-packages
+          path: artifacts/packages
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GridSpace-browser-validation
+          path: |
+            artifacts/screenshots
+            artifacts/test-results
+            artifacts/playwright-report
+            artifacts/browser-results.xml
+            artifacts/server.log
+          if-no-files-found: ignore
+      - name: Source snapshot
+        if: always()
+        run: git archive --format=zip --output=/tmp/GridSpace-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GridSpace-source
+          path: /tmp/GridSpace-source.zip
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [engine, browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: GridSpace-browser
+          path: site
+      - name: Validate artifact provenance
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: jq -e --arg sha "$EXPECTED_SHA" '.commit == $sha' site/build-info.json
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify public site commit and interactions
+        env:
+          GRIDSPACE_URL: ${{ steps.deployment.outputs.page_url }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent "${GRIDSPACE_URL}build-info.json?commit=${EXPECTED_SHA}" -o /tmp/live-build.json && jq -e --arg sha "$EXPECTED_SHA" '.commit == $sha' /tmp/live-build.json; then break; fi
+            sleep 5
+          done
+          jq -e --arg sha "$EXPECTED_SHA" '.commit == $sha' /tmp/live-build.json
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GridSpace-public-site-validation
+          path: |
+            artifacts/screenshots
+            artifacts/test-results
+            artifacts/playwright-report
+            artifacts/browser-results.xml
+          if-no-files-found: ignore

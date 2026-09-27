@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GridSpace.Core/GridSpace.Core.csproj" />
+    <Project Path="src/GridSpace.Formulas/GridSpace.Formulas.csproj" />
+    <Project Path="src/GridSpace.Editing/GridSpace.Editing.csproj" />
+    <Project Path="src/GridSpace.IO/GridSpace.IO.csproj" />
+    <Project Path="src/GridSpace.Layout/GridSpace.Layout.csproj" />
+    <Project Path="src/GridSpace.Skia/GridSpace.Skia.csproj" />
+    <Project Path="src/GridSpace.Controls/GridSpace.Controls.csproj" />
+    <Project Path="src/GridSpace.Workbench/GridSpace.Workbench.csproj" />
+    <Project Path="src/GridSpace.App/GridSpace.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/"><Project Path="tests/GridSpace.Tests/GridSpace.Tests.csproj" /></Folder>
+</Solution>

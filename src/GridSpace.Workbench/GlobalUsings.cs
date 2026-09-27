@@ -1,0 +1,9 @@
+global using Microsoft.UI.Xaml;
+global using Microsoft.UI.Xaml.Controls;
+global using Microsoft.UI.Xaml.Input;
+global using Microsoft.UI.Xaml.Automation;
+global using GridSpace.Controls;
+global using GridSpace.Core;
+global using GridSpace.Editing;
+global using GridSpace.IO;
+global using Windows.System;

@@ -1,0 +1,9 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="'$(GridSpaceDesktopOnly)' == 'true'">net10.0-desktop</TargetFrameworks>
+    <UnoSingleProject>true</UnoSingleProject><OutputType>Library</OutputType><GenerateLibraryLayout>true</GenerateLibraryLayout><UnoFeatures>SkiaRenderer;</UnoFeatures><IsPackable>true</IsPackable>
+    <Description>Composable Excel-style spreadsheet workbench, commands, dialogs and local recovery orchestration.</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../GridSpace.Controls/GridSpace.Controls.csproj" /><ProjectReference Include="../GridSpace.IO/GridSpace.IO.csproj" /></ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+<linker>
+  <assembly fullname="GridSpace.Core" preserve="all" />
+  <assembly fullname="GridSpace.Formulas" preserve="all" />
+  <assembly fullname="GridSpace.Editing" preserve="all" />
+  <assembly fullname="GridSpace.IO" preserve="all" />
+  <assembly fullname="GridSpace.App" preserve="all" />
+</linker>
