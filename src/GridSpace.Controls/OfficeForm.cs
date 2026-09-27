@@ -10,7 +10,7 @@ public sealed record OfficeChoice<T>(T Value, string Label)
 /// <summary>Consistent named input primitives for reusable spreadsheet editors.</summary>
 public static class OfficeForm
 {
-    public static ComboBox Choice<T>(string name, IEnumerable<OfficeChoice<T>> choices, T selected, double width = double.NaN)
+    public static OfficeChoiceBox Choice<T>(string name, IEnumerable<OfficeChoice<T>> choices, T selected, double width = double.NaN)
     {
         var items = choices.ToArray();
         var result = new OfficeChoiceBox
@@ -24,10 +24,10 @@ public static class OfficeForm
         return result;
     }
 
-    public static ComboBox EnumChoice<T>(string name, T selected, double width = double.NaN) where T : struct, Enum =>
+    public static OfficeChoiceBox EnumChoice<T>(string name, T selected, double width = double.NaN) where T : struct, Enum =>
         Choice(name, Enum.GetValues<T>().Select(value => new OfficeChoice<T>(value, Regex.Replace(value.ToString(), "([a-z])([A-Z])", "$1 $2"))), selected, width);
 
-    public static T Value<T>(ComboBox choice) => choice.SelectedItem is OfficeChoice<T> selected ? selected.Value : throw new InvalidOperationException("Choose a value.");
+    public static T Value<T>(OfficeChoiceBox choice) => choice.SelectedItem is OfficeChoice<T> selected ? selected.Value : throw new InvalidOperationException("Choose a value.");
 
     public static StackPanel Field(string label, UIElement input)
     {

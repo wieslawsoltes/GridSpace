@@ -8,8 +8,8 @@ public sealed class ConditionalFormatEditorControl : UserControl
 {
     private readonly ConditionalFormatRule _original;
     private readonly TextBox _range = OfficeTheme.Field("Conditional range");
-    private readonly ComboBox _kind;
-    private readonly ComboBox _comparison;
+    private readonly OfficeChoiceBox _kind;
+    private readonly OfficeChoiceBox _comparison;
     private readonly TextBox _operand = OfficeTheme.Field("Conditional operand");
     private readonly TextBox _operand2 = OfficeTheme.Field("Conditional second operand");
     private readonly TextBox _rank = OfficeTheme.Field("Conditional rank");

@@ -6,7 +6,7 @@ namespace GridSpace.Controls;
 /// <summary>Reusable ordered sort-level editor with header and case-sensitivity settings.</summary>
 public sealed class SortEditorControl : UserControl
 {
-    private sealed record LevelRow(Grid View, ComboBox Column, ComboBox Direction);
+    private sealed record LevelRow(Grid View, OfficeChoiceBox Column, OfficeChoiceBox Direction);
     private readonly List<LevelRow> _rows = [];
     private readonly StackPanel _levels = new() { Spacing = 6 };
     private readonly OfficeChoice<int>[] _columns;

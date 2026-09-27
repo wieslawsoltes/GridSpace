@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using GridSpace.Editing;
+using GridSpace.Controls;
 using GridSpace.Formulas;
 using GridSpace.Workbench;
 using Microsoft.UI.Xaml;
@@ -86,7 +87,13 @@ internal sealed class BrowserDiagnostics : IDisposable
                     json.WriteNumber("x", point.X); json.WriteNumber("y", point.Y);
                     json.WriteNumber("width", element.ActualWidth); json.WriteNumber("height", element.ActualHeight);
                     if (element is TextBox text) json.WriteString("text", text.Text);
-                    if (element is ComboBox combo) json.WriteNumber("selectedIndex", combo.SelectedIndex);
+                    if (element is OfficeChoiceBox choice)
+                    {
+                        json.WriteNumber("selectedIndex", choice.SelectedIndex);
+                        json.WriteNumber("previewIndex", choice.PreviewIndex);
+                        json.WriteBoolean("expanded", choice.IsDropDownOpen);
+                    }
+                    else if (element is ComboBox combo) json.WriteNumber("selectedIndex", combo.SelectedIndex);
                     json.WriteEndObject();
                 }
                 catch (InvalidOperationException) { /* An opening/closing popup may not yet share a visual root. */ }

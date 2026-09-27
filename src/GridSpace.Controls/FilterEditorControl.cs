@@ -12,12 +12,12 @@ public sealed class FilterEditorControl : UserControl
     private readonly int _column;
     private readonly ValueOption[] _values;
     private readonly HashSet<string> _selected;
-    private readonly ComboBox _mode;
+    private readonly OfficeChoiceBox _mode;
     private readonly ListView _list = new() { SelectionMode = ListViewSelectionMode.Multiple, IsMultiSelectCheckBoxEnabled = true, Height = 205 };
     private readonly TextBox _search = OfficeTheme.Field("Filter search");
-    private readonly ComboBox _first;
-    private readonly ComboBox _second;
-    private readonly ComboBox _join;
+    private readonly OfficeChoiceBox _first;
+    private readonly OfficeChoiceBox _second;
+    private readonly OfficeChoiceBox _join;
     private readonly TextBox _firstValue = OfficeTheme.Field("Filter first value");
     private readonly TextBox _secondValue = OfficeTheme.Field("Filter second value");
     private readonly CheckBox _useSecond = new() { Content = "Use a second condition" };
