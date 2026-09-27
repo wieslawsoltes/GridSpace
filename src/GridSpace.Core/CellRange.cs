@@ -13,12 +13,16 @@ public readonly record struct CellRange(CellAddress Start, CellAddress End)
     public bool Intersects(CellRange other) => Top <= other.Bottom && Bottom >= other.Top && Left <= other.Right && Right >= other.Left;
     [JsonIgnore] public CellRange Normalized => new(new(Top, Left), new(Bottom, Right));
     public override string ToString() => Start == End ? Start.ToString() : $"{new CellAddress(Top, Left)}:{new CellAddress(Bottom, Right)}";
-    public static CellRange Parse(string text)
+    public static CellRange Parse(string text) => TryParse(text, out var result) ? result : throw new FormatException("Use an A1 address or A1:B10 range.");
+    public static bool TryParse(string? text, out CellRange range)
     {
+        range = default;
+        if (string.IsNullOrWhiteSpace(text)) return false;
         var parts = text.Split(':');
-        if (parts.Length is < 1 or > 2) throw new FormatException("Use an A1 address or A1:B10 range.");
-        var first = CellAddress.Parse(parts[0]);
-        return new(first, parts.Length == 2 ? CellAddress.Parse(parts[1]) : first);
+        if (parts.Length is < 1 or > 2 || !CellAddress.TryParse(parts[0], out var first)) return false;
+        var last = first;
+        if (parts.Length == 2 && !CellAddress.TryParse(parts[1], out last)) return false;
+        range = new(first, last); return true;
     }
     public IEnumerable<CellAddress> Cells(int limit = 100_000)
     {

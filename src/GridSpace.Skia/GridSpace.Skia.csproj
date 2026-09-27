@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsPackable>true</IsPackable><Description>Viewport-culled SkiaSharp spreadsheet, selection and chart rendering.</Description></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../GridSpace.Layout/GridSpace.Layout.csproj" />
+    <ProjectReference Include="../GridSpace.Editing/GridSpace.Editing.csproj" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
+  </ItemGroup>
+</Project>

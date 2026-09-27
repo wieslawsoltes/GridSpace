@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsPackable>true</IsPackable><Description>Sparse spreadsheet axis indexing, viewport geometry and frozen-pane hit testing.</Description></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../GridSpace.Core/GridSpace.Core.csproj" /></ItemGroup>
+</Project>

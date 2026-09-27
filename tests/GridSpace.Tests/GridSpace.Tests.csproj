@@ -4,6 +4,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.2" />
     <ProjectReference Include="../../src/GridSpace.IO/GridSpace.IO.csproj" />
+    <ProjectReference Include="../../src/GridSpace.Skia/GridSpace.Skia.csproj" />
   </ItemGroup>
 </Project>

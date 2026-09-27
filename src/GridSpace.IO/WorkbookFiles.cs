@@ -21,10 +21,9 @@ public static class WorkbookFiles
         var rows = DelimitedText.Parse(text, separator); var book = new Workbook { Title = Path.GetFileNameWithoutExtension(name) };
         for (var r = 0; r < rows.Count; r++) for (var c = 0; c < rows[r].Length; c++)
         {
-            // Imported CSV is data, not trusted executable spreadsheet formulas.
             var value = rows[r][c];
             if (value.StartsWith('=') || value.StartsWith('@')) value = "'" + value;
-            book.ActiveSheet.Set(new(r, c), new() { Input = value });
+            book.ActiveSheet.Set(new CellAddress(r, c), new Cell { Input = value });
         }
         return new(book, ["CSV/TSV contains values only. Formula-looking imported text is treated as literal data."]);
     }
@@ -32,11 +31,11 @@ public static class WorkbookFiles
     public static byte[] Csv(Workbook book, char separator = ',')
     {
         var sheet = book.ActiveSheet; var range = sheet.UsedRange;
-        if (range.Count > 200_000) throw new InvalidOperationException("CSV export is limited to a 200,000-cell used rectangle.");
+        if ((long)(range.Bottom + 1) * (range.Right + 1) > 200_000) throw new InvalidOperationException("CSV export is limited to a 200,000-cell rectangle from A1 to the last used cell.");
         var engine = new CalculationEngine(book);
         var rows = Enumerable.Range(0, range.Bottom + 1).Select(r => Enumerable.Range(0, range.Right + 1).Select(c =>
         {
-            var value = engine.Evaluate(sheet, new(r, c)); var text = value.ToString();
+            var value = engine.Evaluate(sheet, new CellAddress(r, c)); var text = value.ToString();
             return value.Kind == ValueKind.Text && text.Length > 0 && "=+-@\t\r".Contains(text[0]) ? "'" + text : text;
         }));
         return Encoding.UTF8.GetBytes(DelimitedText.Write(rows, separator));
