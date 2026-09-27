@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using GridSpace.Core;
 
@@ -6,48 +5,88 @@ namespace GridSpace.Formulas;
 
 public static class FormulaReferences
 {
-    private static readonly Regex Reference = new(@"(?<![\w.])(?:(?<sheet>'(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!)?(?<col>\$?[A-Za-z]{1,3})(?<row>\$?[1-9][0-9]*)(?![\w.(])", RegexOptions.Compiled, TimeSpan.FromMilliseconds(200));
+    private const string SheetPattern = "'(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*";
+    private static readonly Regex Reference = new(
+        @"(?<![\w.\]])(?:(?<sheet>" + SheetPattern + @")!)?(?<col>\$?[A-Za-z]{1,3})(?<row>\$?[1-9][0-9]*)(?:\s*:\s*(?:(?<sheet2>" + SheetPattern + @")!)?(?<col2>\$?[A-Za-z]{1,3})(?<row2>\$?[1-9][0-9]*))?(?![\w.(])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
+
     public static string Translate(string formula, int rows, int columns) => Rewrite(formula, match =>
     {
-        var c = match.Groups["col"].Value; var r = match.Groups["row"].Value;
-        if (!CellAddress.TryParse(c + r, out var a)) return match.Value;
-        var target = new CellAddress(a.Row + (r.StartsWith('$') ? 0 : rows), a.Column + (c.StartsWith('$') ? 0 : columns));
-        return Render(match, target);
+        string Shift(string suffix)
+        {
+            var c = match.Groups["col" + suffix].Value;
+            var r = match.Groups["row" + suffix].Value;
+            if (!CellAddress.TryParse(c + r, out var address)) return Part(match, suffix);
+            var target = new CellAddress(address.Row + (r.StartsWith('$') ? 0 : rows), address.Column + (c.StartsWith('$') ? 0 : columns));
+            return Render(match, suffix, target);
+        }
+        var first = Shift("");
+        if (!match.Groups["col2"].Success) return first;
+        var second = Shift("2");
+        return first == "#REF!" || second == "#REF!" ? "#REF!" : first + ":" + second;
     });
+
     public static string RenameSheet(string formula, string oldName, string newName) => Rewrite(formula, match =>
     {
-        var sheet = Unquote(match.Groups["sheet"].Value);
-        return sheet.Equals(oldName, StringComparison.OrdinalIgnoreCase) ? "'" + newName.Replace("'", "''") + "'!" + match.Groups["col"].Value + match.Groups["row"].Value : match.Value;
-    });
-    /// <summary>Rebases references for a row/column insertion, including absolute references and range endpoints.</summary>
-    public static string Insert(string formula, string formulaSheet, string editedSheet, bool rows, int position, int count)
-    {
-        var lastSheet = formulaSheet; var lastEnd = -1;
-        return Rewrite(formula, match =>
+        string Rename(string suffix)
         {
-            var explicitSheet = match.Groups["sheet"].Value;
-            // A qualified A1:B2 range inherits the sheet on its first endpoint.
-            var isRangeEnd = match.Index > 0 && match.Index <= formula.Length && formula[match.Index - 1] == ':' && lastEnd >= 0;
-            var sheet = explicitSheet.Length > 0 ? Unquote(explicitSheet) : isRangeEnd ? lastSheet : formulaSheet;
-            lastSheet = sheet; lastEnd = match.Index + match.Length;
-            if (!sheet.Equals(editedSheet, StringComparison.OrdinalIgnoreCase)) return match.Value;
-            if (!CellAddress.TryParse(match.Groups["col"].Value + match.Groups["row"].Value, out var address)) return match.Value;
-            var target = rows ? address with { Row = address.Row >= position ? address.Row + count : address.Row } : address with { Column = address.Column >= position ? address.Column + count : address.Column };
-            return Render(match, target);
-        });
-    }
-    private static string Render(Match match, CellAddress target)
+            var sheet = Unquote(match.Groups["sheet" + suffix].Value);
+            return sheet.Equals(oldName, StringComparison.OrdinalIgnoreCase)
+                ? "'" + newName.Replace("'", "''") + "'!" + match.Groups["col" + suffix].Value + match.Groups["row" + suffix].Value
+                : Part(match, suffix);
+        }
+        return Rename("") + (match.Groups["col2"].Success ? ":" + Rename("2") : "");
+    });
+
+    public static string DeleteSheet(string formula, string deletedName) => Rewrite(formula, match =>
+        new[] { "sheet", "sheet2" }.Any(g => Unquote(match.Groups[g].Value).Equals(deletedName, StringComparison.OrdinalIgnoreCase)) ? "#REF!" : match.Value);
+
+    public static string Insert(string formula, string formulaSheet, string editedSheet, bool rows, int position, int count) =>
+        Edit(formula, formulaSheet, editedSheet, new AxisEdit(rows, position, count, false));
+
+    public static string Delete(string formula, string formulaSheet, string editedSheet, bool rows, int position, int count) =>
+        Edit(formula, formulaSheet, editedSheet, new AxisEdit(rows, position, count, true));
+
+    /// <summary>Transforms a whole A1 range as an interval, not two unrelated endpoints. Quoted literals remain untouched.</summary>
+    public static string Edit(string formula, string formulaSheet, string editedSheet, AxisEdit edit) => Rewrite(formula, match =>
+    {
+        if (!CellAddress.TryParse(match.Groups["col"].Value + match.Groups["row"].Value, out var first)) return match.Value;
+        var firstSheet = match.Groups["sheet"].Success ? Unquote(match.Groups["sheet"].Value) : formulaSheet;
+        var secondSheet = match.Groups["sheet2"].Success ? Unquote(match.Groups["sheet2"].Value) : firstSheet;
+        var hasRange = match.Groups["col2"].Success;
+        var second = first;
+        if (hasRange && !CellAddress.TryParse(match.Groups["col2"].Value + match.Groups["row2"].Value, out second)) return match.Value;
+        if (firstSheet.Equals(editedSheet, StringComparison.OrdinalIgnoreCase) && secondSheet.Equals(firstSheet, StringComparison.OrdinalIgnoreCase))
+        {
+            var result = edit.Map(new CellRange(first, second));
+            if (result is null) return "#REF!";
+            return Render(match, "", result.Value.Start) + (hasRange ? ":" + Render(match, "2", result.Value.End) : "");
+        }
+        // Explicitly qualified endpoints on different sheets are not collapsed into a local range.
+        var a = firstSheet.Equals(editedSheet, StringComparison.OrdinalIgnoreCase) ? edit.Map(first) : first;
+        var b = secondSheet.Equals(editedSheet, StringComparison.OrdinalIgnoreCase) ? edit.Map(second) : second;
+        if (a is null || hasRange && b is null) return "#REF!";
+        return Render(match, "", a.Value) + (hasRange ? ":" + Render(match, "2", b!.Value) : "");
+    });
+
+    private static string Part(Match match, string suffix) =>
+        (match.Groups["sheet" + suffix].Success ? match.Groups["sheet" + suffix].Value + "!" : "") + match.Groups["col" + suffix].Value + match.Groups["row" + suffix].Value;
+
+    private static string Render(Match match, string suffix, CellAddress target)
     {
         if (!target.IsValid) return "#REF!";
-        var sheet = match.Groups["sheet"].Success ? match.Groups["sheet"].Value + "!" : "";
-        return sheet + (match.Groups["col"].Value.StartsWith('$') ? "$" : "") + CellAddress.ColumnName(target.Column) + (match.Groups["row"].Value.StartsWith('$') ? "$" : "") + (target.Row + 1);
+        var sheet = match.Groups["sheet" + suffix].Success ? match.Groups["sheet" + suffix].Value + "!" : "";
+        return sheet + (match.Groups["col" + suffix].Value.StartsWith('$') ? "$" : "") + CellAddress.ColumnName(target.Column)
+            + (match.Groups["row" + suffix].Value.StartsWith('$') ? "$" : "") + (target.Row + 1);
     }
+
     private static string Unquote(string name) => name.StartsWith('\'') && name.EndsWith('\'') ? name[1..^1].Replace("''", "'") : name;
+
     private static string Rewrite(string formula, MatchEvaluator evaluator)
     {
         if (!formula.StartsWith('=')) return formula;
-        // Replace inside the original full string, skipping matches covered by double-quoted literals.
-        var quoted = new bool[formula.Length]; var inside = false;
+        var quoted = new bool[formula.Length];
+        var inside = false;
         for (var i = 0; i < formula.Length; i++)
         {
             if (formula[i] == '"')
