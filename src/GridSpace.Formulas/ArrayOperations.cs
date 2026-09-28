@@ -41,7 +41,13 @@ internal static class ArrayOperations
 
     internal static CalcValue Call(string name, CalcValue[] args)
     {
-        if (args.Any(a => a.IsError)) return args.First(a => a.IsError);
+        // Stack arguments are data, including errors. FILTER's fallback is only a result
+        // when no rows/columns match; an unused error fallback must not poison valid data.
+        if (name is not ("HSTACK" or "VSTACK"))
+        {
+            var required = name == "FILTER" ? args.Take(2) : args;
+            foreach (var argument in required) if (argument.IsError) return argument;
+        }
         CalcValue V(int i) => i < args.Length ? args[i] : CalcValue.Blank;
         double Number(int i, double fallback = 0) => i >= args.Length || V(i).Kind == ValueKind.Blank ? fallback
             : V(i).TryNumber(out var value) ? value : throw new FormatException("Expected a scalar number.");
