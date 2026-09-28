@@ -53,6 +53,16 @@ internal sealed class BrowserDiagnostics : IDisposable
             json.WriteString("input", _session.Sheet.Get(_session.ActiveCell).Input);
             json.WriteString("value", value.ToString());
             json.WriteNumber("cells", _session.Sheet.Cells.Count);
+            var spill = _session.Calculation.GetSpill(_session.Sheet, _session.ActiveCell);
+            json.WriteString("spillAnchor", spill?.Anchor.ToString());
+            json.WriteString("spillRange", spill?.Range.ToString());
+            json.WriteBoolean("spillFollower", _session.IsSpillFollower);
+            json.WriteString("formulaInput", _session.FormulaInput);
+            json.WriteBoolean("editing", _workbench.Surface.IsEditing);
+            json.WriteNumber("layoutRefreshes", _workbench.Surface.LayoutRefreshCount);
+            json.WriteNumber("historyBytes", _session.RetainedHistoryBytes);
+            json.WriteNumber("calculatedCells", _session.Calculation.EvaluatedCellCount);
+            json.WriteNumber("calculationCacheHits", _session.Calculation.CacheHitCount);
             json.WriteBoolean("bold", _session.SelectedStyle.Bold);
             json.WriteString("effectiveFill", effective.Style.Background);
             json.WriteBoolean("effectiveBold", effective.Style.Bold);
@@ -86,7 +96,11 @@ internal sealed class BrowserDiagnostics : IDisposable
                     json.WriteStartObject(name);
                     json.WriteNumber("x", point.X); json.WriteNumber("y", point.Y);
                     json.WriteNumber("width", element.ActualWidth); json.WriteNumber("height", element.ActualHeight);
-                    if (element is TextBox text) json.WriteString("text", text.Text);
+                    if (element is TextBox text)
+                    {
+                        json.WriteString("text", text.Text);
+                        json.WriteBoolean("readOnly", text.IsReadOnly);
+                    }
                     if (element is OfficeChoiceBox choice)
                     {
                         json.WriteNumber("selectedIndex", choice.SelectedIndex);

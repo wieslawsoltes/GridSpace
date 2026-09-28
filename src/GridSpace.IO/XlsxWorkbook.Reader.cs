@@ -20,6 +20,8 @@ public static partial class XlsxWorkbook
         var warnings = new List<string>();
         var differentials = ReadDifferentials(zip, warnings);
         var explicitVisibility = new HashSet<Worksheet>();
+        var dynamicMetadata = ReadDynamicMetadata(zip, relationships);
+        long remainingDynamicCells = 200_000;
         long remainingSharedCharacters = 32 * 1024 * 1024;
         foreach (var info in xml.Root.Element(S + "sheets")?.Elements(S + "sheet") ?? [])
         {
@@ -29,6 +31,7 @@ public static partial class XlsxWorkbook
             var sheet = new Worksheet { Name = (string?)info.Attribute("name") ?? "Sheet" + (book.Sheets.Count + 1) };
             var root = Xml(zip, path).Root!;
             NormalizeWorksheetFormulas(root, warnings, ref remainingSharedCharacters);
+            var dynamicFollowers = NormalizeDynamicArrays(root, dynamicMetadata, warnings, ref remainingDynamicCells);
             foreach (var row in root.Element(S + "sheetData")?.Elements(S + "row") ?? [])
             {
                 var rowIndex = Int(row.Attribute("r"), 1) - 1;
@@ -41,9 +44,10 @@ public static partial class XlsxWorkbook
                     var styleIndex = Int(cell.Attribute("s")); var style = styleIndex >= 0 && styleIndex < styles.Count ? styles[styleIndex] : CellStyle.Default;
                     var formula = cell.Element(S + "f"); var value = cell.Element(S + "v")?.Value ?? ""; var type = (string?)cell.Attribute("t");
                     string raw;
-                    if (formula is not null)
+                    if (dynamicFollowers.Contains(address)) raw = "";
+                    else if (formula is not null)
                     {
-                        if (formula.Attribute("t") is { Value: "array" }) { raw = "=" + formula.Value; warnings.Add("Array/spill formulas are not supported."); }
+                        if (formula.Attribute("t") is { Value: "array" }) { raw = "=" + formula.Value; warnings.Add("A legacy array formula was retained without fixed-range CSE semantics. Keep the original workbook."); }
                         else raw = "=" + formula.Value;
                     }
                     else if (type == "s") { if (!int.TryParse(value, out var n) || n < 0 || n >= strings.Length) throw new InvalidDataException("Invalid shared string index."); raw = "'" + strings[n]; }

@@ -83,6 +83,8 @@ public sealed partial class SpreadsheetSession
             throw new ArgumentException("Choose 1–64 distinct sort columns inside the selected data range.");
         if (area.Count > 100_000) throw new InvalidOperationException("Sorting is limited to 100,000 cells.");
         if (Sheet.Merges.Any(m => m.Intersects(area))) throw new InvalidOperationException("Unmerge cells in the sort range first.");
+        if (Calculation.GetSpills(Sheet).Any(s => s.Range.Intersects(area)))
+            throw new InvalidOperationException("A sort cannot move part of a spilled array. Sort its source data or use SORT instead.");
         var first = area.Top + (header ? 1 : 0);
         if (first > area.Bottom) return;
         var keys = levels.ToArray();

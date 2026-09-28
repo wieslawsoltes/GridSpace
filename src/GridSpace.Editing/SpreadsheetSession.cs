@@ -7,7 +7,14 @@ namespace GridSpace.Editing;
 /// <summary>The editing boundary shared by native, browser and headless clients.</summary>
 public sealed partial class SpreadsheetSession
 {
-    private sealed record HistoryEntry(string Name, string Before, string After, CellRange Selection);
+    private sealed record HistoryEntry(string Name, string Before, string After, CellRange Selection)
+    {
+        public CellPatch[]? Patches { get; init; }
+        public int SheetIndex { get; init; }
+        public long Size => Patches is { } patches
+            ? patches.Sum(p => 256L + 2L * (p.Before.Input.Length + p.After.Input.Length + (p.Before.Note?.Length ?? 0) + (p.After.Note?.Length ?? 0)))
+            : 2L * (Before.Length + After.Length);
+    }
     private readonly List<HistoryEntry> _undo = [];
     private readonly Stack<HistoryEntry> _redo = [];
     private bool _inTransaction;
@@ -47,7 +54,7 @@ public sealed partial class SpreadsheetSession
             action(); Book.Attach(); var after = Book.ToJson();
             if (before == after) return;
             _undo.Add(new(name, before, after, selection)); _redo.Clear();
-            while (_undo.Count > 40 || _undo.Count > 1 && _undo.Sum(e => (long)e.Before.Length + e.After.Length) > 32 * 1024 * 1024) _undo.RemoveAt(0);
+            TrimHistory();
             IsDirty = true;
         }
         catch { Restore(before); Selection = selection; throw; }
@@ -58,12 +65,12 @@ public sealed partial class SpreadsheetSession
     {
         if (!CanUndo) return;
         var entry = _undo[^1]; _undo.RemoveAt(_undo.Count - 1); _redo.Push(entry);
-        Restore(entry.Before); Selection = entry.Selection; IsDirty = true; Notify("Undo " + entry.Name, true);
+        Replay(entry, false); Selection = entry.Selection; IsDirty = true; Notify("Undo " + entry.Name, true);
     }
     public void Redo()
     {
         if (!CanRedo) return;
-        var entry = _redo.Pop(); _undo.Add(entry); Restore(entry.After); Selection = entry.Selection; IsDirty = true; Notify("Redo " + entry.Name, true);
+        var entry = _redo.Pop(); _undo.Add(entry); Replay(entry, true); Selection = entry.Selection; IsDirty = true; Notify("Redo " + entry.Name, true);
     }
     public void Load(Workbook book)
     {
@@ -76,23 +83,23 @@ public sealed partial class SpreadsheetSession
         foreach (var (range, values) in Sheet.ValidationLists)
             if (CellRange.Parse(range).Contains(address) && input != "" && !values.Contains(input, StringComparer.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Choose a permitted value: " + string.Join(", ", values));
-        Perform("Edit " + address, () => Sheet.Set(address, Sheet.Get(address) with { Input = input }));
+        if (Calculation.GetSpill(Sheet, address) is { } spill && spill.Anchor != address)
+            throw new InvalidOperationException("You cannot change part of a spilled array. Edit " + spill.Anchor + " instead.");
+        ApplyCells("Edit " + address, [new(address, Sheet.Get(address) with { Input = input })]);
     }
-    public void ApplyStyle(Func<CellStyle, CellStyle> transform) => Perform("Format cells", () =>
+    public void ApplyStyle(Func<CellStyle, CellStyle> transform) => ApplyCells("Format cells",
+        Selection.Cells().Select(address => new KeyValuePair<CellAddress, Cell>(address, Sheet.Get(address) with { Style = transform(Sheet.Get(address).Style) })));
+
+    public void Clear(bool formats = false)
     {
-        foreach (var address in Selection.Cells()) Sheet.Set(address, Sheet.Get(address) with { Style = transform(Sheet.Get(address).Style) });
-    });
-    public void Clear(bool formats = false) => Perform(formats ? "Clear all" : "Clear contents", () =>
-    {
-        foreach (var key in Sheet.Cells.Keys.Where(k => Selection.Contains(CellAddress.Parse(k))).ToArray())
-        {
-            var a = CellAddress.Parse(key); Sheet.Set(a, formats ? new() : Sheet.Get(a) with { Input = "" });
-        }
-    });
+        CheckSpillSelection(Selection);
+        ApplyCells(formats ? "Clear all" : "Clear contents", Sheet.Cells.Keys.Select(CellAddress.Parse).Where(Selection.Contains)
+            .Select(address => new KeyValuePair<CellAddress, Cell>(address, formats ? Cell.Empty : Sheet.Get(address) with { Input = "" })));
+    }
     public ClipboardBlock Copy()
     {
         var range = Selection.Normalized;
-        var cells = range.Cells().Select(Sheet.Get).ToArray();
+        var cells = range.Cells().Select(a => CopyCell(a, range)).ToArray();
         var text = DelimitedText.Write(Enumerable.Range(range.Top, range.Bottom - range.Top + 1).Select(r => Enumerable.Range(range.Left, range.Right - range.Left + 1).Select(c => Calculation.Evaluate(Sheet, new CellAddress(r, c)).ToString())));
         Clipboard = new(Sheet.Name, range, cells, text); Notify("Copied"); return Clipboard;
     }
@@ -103,21 +110,20 @@ public sealed partial class SpreadsheetSession
         {
             var width = block.Source.Right - block.Source.Left + 1; var height = block.Source.Bottom - block.Source.Top + 1;
             CheckExtent(target, height, width);
-            Perform("Paste", () =>
+            ApplyCells("Paste", Enumerable.Range(0, height).SelectMany(r => Enumerable.Range(0, width).Select(c =>
             {
-                for (var r = 0; r < height; r++) for (var c = 0; c < width; c++)
-                {
-                    var cell = block.Cells[r * width + c];
-                    Sheet.Set(new CellAddress(target.Row + r, target.Column + c), cell with { Input = FormulaReferences.Translate(cell.Input, target.Row - block.Source.Top, target.Column - block.Source.Left) });
-                }
-            });
+                var cell = block.Cells[r * width + c];
+                return new KeyValuePair<CellAddress, Cell>(new(target.Row + r, target.Column + c), cell with
+                { Input = FormulaReferences.Translate(cell.Input, target.Row - block.Source.Top, target.Column - block.Source.Left) });
+            })));
             Select(new CellRange(target, new CellAddress(target.Row + height - 1, target.Column + width - 1))); return;
         }
         var rows = DelimitedText.Parse(text); var cols = rows.Max(r => r.Length); CheckExtent(target, rows.Count, cols);
-        Perform("Paste text", () => { for (var r = 0; r < rows.Count; r++) for (var c = 0; c < rows[r].Length; c++)
+        ApplyCells("Paste text", Enumerable.Range(0, rows.Count).SelectMany(r => Enumerable.Range(0, rows[r].Length).Select(c =>
         {
-            var address = new CellAddress(target.Row + r, target.Column + c); Sheet.Set(address, Sheet.Get(address) with { Input = rows[r][c] });
-        } });
+            var address = new CellAddress(target.Row + r, target.Column + c);
+            return new KeyValuePair<CellAddress, Cell>(address, Sheet.Get(address) with { Input = rows[r][c] });
+        })));
         Select(new CellRange(target, new CellAddress(target.Row + rows.Count - 1, target.Column + cols - 1)));
     }
     private static void CheckExtent(CellAddress target, int rows, int columns)
@@ -127,30 +133,43 @@ public sealed partial class SpreadsheetSession
     }
     public void Fill(CellRange source, CellRange destination, bool series = true)
     {
-        var original = source.Cells().ToDictionary(a => a, Sheet.Get);
-        _ = destination.Cells().Count();
-        Perform("Fill cells", () =>
+        var original = source.Cells().ToDictionary(a => a, a => CopyCell(a, source));
+        if (destination.Count > 100_000) throw new InvalidOperationException("Fill is limited to 100,000 cells.");
+        var height = source.Bottom - source.Top + 1; var width = source.Right - source.Left + 1;
+        var first = Calculation.Evaluate(Sheet, new CellAddress(source.Top, source.Left));
+        var next = Calculation.Evaluate(Sheet, new CellAddress(Math.Min(source.Top + 1, source.Bottom), source.Left));
+        var useSeries = series && width == 1 && height == 2 && first.Kind == ValueKind.Number && next.Kind == ValueKind.Number;
+        ApplyCells("Fill cells", destination.Cells().Where(a => !source.Contains(a)).Select(a =>
         {
-            var height = source.Bottom - source.Top + 1; var width = source.Right - source.Left + 1;
-            var first = Calculation.Evaluate(Sheet, new CellAddress(source.Top, source.Left));
-            var next = Calculation.Evaluate(Sheet, new CellAddress(Math.Min(source.Top + 1, source.Bottom), source.Left));
-            var useSeries = series && width == 1 && height == 2 && first.Kind == ValueKind.Number && next.Kind == ValueKind.Number;
-            foreach (var a in destination.Cells())
-            {
-                if (source.Contains(a)) continue;
-                var origin = new CellAddress(source.Top + ((a.Row - source.Top) % height + height) % height, source.Left + ((a.Column - source.Left) % width + width) % width);
-                var cell = original[origin];
-                var input = useSeries ? (first.Number + (a.Row - source.Top) * (next.Number - first.Number)).ToString("G15", CultureInfo.InvariantCulture) : FormulaReferences.Translate(cell.Input, a.Row - origin.Row, a.Column - origin.Column);
-                Sheet.Set(a, cell with { Input = input });
-            }
-        });
+            var origin = new CellAddress(source.Top + ((a.Row - source.Top) % height + height) % height, source.Left + ((a.Column - source.Left) % width + width) % width);
+            var cell = original[origin];
+            var input = useSeries ? (first.Number + (a.Row - source.Top) * (next.Number - first.Number)).ToString("G15", CultureInfo.InvariantCulture)
+                : FormulaReferences.Translate(cell.Input, a.Row - origin.Row, a.Column - origin.Column);
+            return new KeyValuePair<CellAddress, Cell>(a, cell with { Input = input });
+        }));
         Select(destination);
     }
     public void FillDown() { if (Selection.Bottom > Selection.Top) Fill(new(new(Selection.Top, Selection.Left), new(Selection.Top, Selection.Right)), Selection, false); }
     public void FillRight() { if (Selection.Right > Selection.Left) Fill(new(new(Selection.Top, Selection.Left), new(Selection.Bottom, Selection.Left)), Selection, false); }
+    private Workbook? _summaryBook;
+    private Worksheet? _summarySheet;
+    private CellRange _summarySelection;
+    private long _summaryRevision = -1;
+    private string _summary = "";
     public string SelectionSummary()
     {
-        var numbers = Sheet.Cells.Keys.Select(CellAddress.Parse).Where(Selection.Contains).Select(a => Calculation.Evaluate(Sheet, a)).Where(v => v.Kind == ValueKind.Number).Select(v => v.Number).ToArray();
-        return numbers.Length < 2 ? "" : $"Average: {numbers.Average():#,##0.##}     Count: {numbers.Length:N0}     Sum: {numbers.Sum():#,##0.##}";
+        if (Selection.Count < 2) return "";
+        if (ReferenceEquals(Book, _summaryBook) && ReferenceEquals(Sheet, _summarySheet) && _summaryRevision == Book.Revision && _summarySelection == Selection) return _summary;
+        IEnumerable<CellAddress> addresses = Selection.Count <= 4096 ? Selection.Cells() :
+            Sheet.Cells.Keys.Select(CellAddress.Parse).Concat(Calculation.GetSpills(Sheet).Where(s => s.Range.Intersects(Selection)).SelectMany(s => s.Range.Cells())).Where(Selection.Contains).Distinct();
+        double sum = 0; var count = 0;
+        foreach (var address in addresses)
+        {
+            var value = Calculation.Evaluate(Sheet, address);
+            if (value.Kind != ValueKind.Number) continue;
+            sum += value.Number; count++;
+        }
+        _summaryBook = Book; _summarySheet = Sheet; _summaryRevision = Book.Revision; _summarySelection = Selection;
+        return _summary = count < 2 ? "" : $"Average: {sum / count:#,##0.##}     Count: {count:N0}     Sum: {sum:#,##0.##}";
     }
 }

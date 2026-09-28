@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "framework": ".NET 10.0.12",
+  "os": "Debian GNU/Linux 13 (trixie)",
+  "architecture": "X64",
+  "logicalProcessors": 4,
+  "rows": 10000,
+  "storedCells": 20000,
+  "warmIndependentFormulaEvaluationsAfterOneEdit": 2,
+  "estimatedRetainedHistoryBytes": 9934,
+  "observations": [
+    {
+      "scenario": "edit-one-and-recalculate-dependent",
+      "iterations": 30,
+      "medianMilliseconds": 0.0185,
+      "p95Milliseconds": 0.1014,
+      "allocatedBytesPerOperation": 5712,
+      "generation0Collections": 0
+    },
+    {
+      "scenario": "edit-one-and-undo",
+      "iterations": 20,
+      "medianMilliseconds": 0.0199,
+      "p95Milliseconds": 0.0589,
+      "allocatedBytesPerOperation": 5848,
+      "generation0Collections": 0
+    },
+    {
+      "scenario": "unchanged-selection-summary",
+      "iterations": 100,
+      "medianMilliseconds": 0.0001,
+      "p95Milliseconds": 0.0001,
+      "allocatedBytesPerOperation": 0,
+      "generation0Collections": 0
+    }
+  ]
+}

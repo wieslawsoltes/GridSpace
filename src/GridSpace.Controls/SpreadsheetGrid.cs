@@ -31,6 +31,15 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     private double _resizeOriginal, _resizeValue, _panX, _panY;
     private int _resizeIndex;
     private bool _endingEdit, _disposed;
+    private Worksheet? _geometrySheet;
+    private long _geometryRevision = -1;
+    public int LayoutRefreshCount { get; private set; }
+    private void RefreshGeometry()
+    {
+        if (Session is null || ReferenceEquals(_geometrySheet, Session.Sheet) && _geometryRevision == Session.Book.StructureRevision) return;
+        _geometrySheet = Session.Sheet; _geometryRevision = Session.Book.StructureRevision;
+        Viewport.Refresh(Session.Sheet); LayoutRefreshCount++;
+    }
     public GridViewport Viewport { get; } = new();
     public SpreadsheetRenderer Renderer { get; } = new();
     public event Action<string>? CommandRequested;
@@ -46,7 +55,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
             if (_session == value) return;
             if (_session is not null) _session.Changed -= SessionChanged;
             CancelEdit(); CancelGesture(); _session = value;
-            if (_session is not null) { _session.Changed += SessionChanged; Viewport.Refresh(_session.Sheet); }
+            if (_session is not null) { _session.Changed += SessionChanged; RefreshGeometry(); }
             Invalidate();
         }
     }
@@ -91,7 +100,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     private void SessionChanged(object? sender, SessionChangedEventArgs args)
     {
         if (Session is null) return;
-        Viewport.Refresh(Session.Sheet);
+        RefreshGeometry();
         if (args.Reason is "Switch worksheet" or "Open workbook" or "Insert worksheet") { CancelEdit(); Viewport.ScrollTo(0, 0); }
         Invalidate();
         AutomationProperties.SetHelpText(this, Session.Sheet.Name + "!" + Session.Selection + ": " + Session.Calculation.Evaluate(Session.Sheet, Session.ActiveCell));
@@ -197,6 +206,11 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     public void BeginEdit(string? initial = null)
     {
         if (Session is null || !CommitEdit()) return;
+        if (Session.IsSpillFollower)
+        {
+            Error?.Invoke("You cannot change part of a spilled array. Edit " + Session.Calculation.GetSpill(Session.Sheet, Session.ActiveCell)!.Anchor + " instead.");
+            return;
+        }
         _editAddress = Session.ActiveCell; Viewport.EnsureVisible(_editAddress);
         _editor = OfficeTheme.Field("Cell editor"); _editor.Text = initial ?? Session.Sheet.Get(_editAddress).Input;
         _editor.FontSize = Session.SelectedStyle.FontSize * 96 / 72 * Viewport.Zoom;

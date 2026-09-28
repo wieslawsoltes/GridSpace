@@ -7,6 +7,11 @@ public sealed class FormulaBarControl : UserControl
     private bool _updating, _finishing;
     private string _original = "";
     public bool IsEditing { get; private set; }
+    public void SetReadOnly(bool readOnly)
+    {
+        _formula.IsReadOnly = readOnly;
+        _formula.Foreground = OfficeTheme.Brush(readOnly ? "#808080" : "#242424");
+    }
     public Func<string, bool>? CommitInput { get; set; }
     public Func<string, bool>? Navigate { get; set; }
     public event Action? EditingStarted;

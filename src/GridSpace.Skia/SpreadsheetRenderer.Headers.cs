@@ -9,6 +9,8 @@ public sealed partial class SpreadsheetRenderer
 {
     private void DrawSelection(SKCanvas canvas, SpreadsheetSession session, GridViewport viewport, GridPane pane)
     {
+        if (session.Calculation.GetSpill(session.Sheet, session.ActiveCell) is { } spill)
+            Stroke(canvas, Rect(viewport.RangeBounds(spill.Range, pane)), Color("#4472C4"), 1);
         var rect = Rect(viewport.RangeBounds(session.Selection, pane));
         if (session.Selection.Count > 1) Fill(canvas, rect, new SKColor(16, 124, 65, 24));
         Stroke(canvas, rect, Color("#107C41"), 2); Fill(canvas, new SKRect(rect.Right - 3, rect.Bottom - 3, rect.Right + 3, rect.Bottom + 3), Color("#107C41"));

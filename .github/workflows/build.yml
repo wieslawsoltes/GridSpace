@@ -20,12 +20,18 @@ jobs:
           global-json-file: global.json
       - name: Test engine, documents, layout and rendering
         run: dotnet test tests/GridSpace.Tests/GridSpace.Tests.csproj -c Release --logger 'trx;LogFileName=engine.trx' --results-directory artifacts/tests
+      - name: Measure engine hot paths
+        run: |
+          dotnet build tools/GridSpace.Benchmarks -c Release
+          mkdir -p artifacts/benchmarks
+          dotnet run --project tools/GridSpace.Benchmarks -c Release --no-build -- 10000 > artifacts/benchmarks/engine.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: GridSpace-engine-validation
           path: |
             artifacts/tests
+            artifacts/benchmarks
             **/artifacts/rendering
           if-no-files-found: ignore
   browser:

@@ -13,7 +13,36 @@ public sealed class Workbook
     [JsonIgnore] public long Revision { get; private set; }
     [JsonIgnore] public Worksheet ActiveSheet => Sheets[Math.Clamp(ActiveSheetIndex, 0, Sheets.Count - 1)];
     public Workbook() => Attach();
-    public void Touch() => Revision++;
+    private const int JournalCapacity = 8192;
+    private CellMutation[]? _mutations;
+    [JsonIgnore] public long StructureRevision { get; private set; }
+    private long _journalFloor;
+
+    /// <summary>Invalidates all derived state after structural or externally applied mutations.</summary>
+    public void Touch()
+    {
+        StructureRevision = ++Revision;
+        _journalFloor = Revision;
+        if (_mutations is not null) Array.Clear(_mutations);
+    }
+
+    private void RecordCellMutation(Worksheet sheet, CellAddress address, bool inputChanged)
+    {
+        _mutations ??= new CellMutation[JournalCapacity];
+        var revision = ++Revision;
+        _mutations[(int)(revision % JournalCapacity)] = new(revision, sheet, address, inputChanged);
+        _journalFloor = Math.Max(_journalFloor, revision - JournalCapacity);
+    }
+
+    /// <summary>Returns false when a structural change or journal eviction requires full invalidation.</summary>
+    public bool TryGetCellMutations(long afterRevision, ICollection<CellMutation> destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (afterRevision < _journalFloor || afterRevision > Revision) return false;
+        for (var revision = afterRevision + 1; revision <= Revision; revision++)
+            destination.Add(_mutations![(int)(revision % JournalCapacity)]);
+        return true;
+    }
     public Worksheet? FindSheet(string name) => Sheets.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
     public void Attach()
     {
@@ -27,8 +56,10 @@ public sealed class Workbook
             if (sheet.Cells.Count > 200_000) throw new InvalidDataException("The current per-sheet import limit is 200,000 stored cells.");
             foreach (var key in sheet.Cells.Keys) _ = CellAddress.Parse(key);
             sheet.ValidateMetadata();
-            sheet.Cells = new(sheet.Cells, StringComparer.OrdinalIgnoreCase);
+            if (!sheet.Cells.Comparer.Equals(StringComparer.OrdinalIgnoreCase))
+                sheet.Cells = new(sheet.Cells, StringComparer.OrdinalIgnoreCase);
             sheet.Changed = Touch;
+            sheet.CellChanged = RecordCellMutation;
         }
         Names = new(Names, StringComparer.OrdinalIgnoreCase);
         ActiveSheetIndex = Math.Clamp(ActiveSheetIndex, 0, Sheets.Count - 1);

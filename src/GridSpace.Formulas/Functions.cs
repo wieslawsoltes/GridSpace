@@ -6,13 +6,34 @@ namespace GridSpace.Formulas;
 
 public sealed partial class CalculationEngine
 {
-    public static IReadOnlyList<string> BuiltInFunctions { get; } = ["SUM", "AVERAGE", "MIN", "MAX", "COUNT", "COUNTA", "COUNTBLANK", "PRODUCT", "SUMPRODUCT", "IF", "IFS", "IFERROR", "AND", "OR", "NOT", "TRUE", "FALSE", "ABS", "SQRT", "ROUND", "ROUNDUP", "ROUNDDOWN", "INT", "MOD", "POWER", "EXP", "LN", "LOG", "SIN", "COS", "TAN", "PI", "SIGN", "CONCAT", "CONCATENATE", "TEXTJOIN", "LEFT", "RIGHT", "MID", "LEN", "TRIM", "UPPER", "LOWER", "SUBSTITUTE", "REPLACE", "FIND", "SEARCH", "EXACT", "VALUE", "TEXT", "DATE", "DAY", "MONTH", "YEAR", "TODAY", "NOW", "WEEKDAY", "SUMIF", "COUNTIF", "AVERAGEIF", "VLOOKUP", "XLOOKUP", "INDEX", "MATCH", "ROW", "COLUMN", "ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "PMT"];
+    public static IReadOnlyList<string> BuiltInFunctions { get; } = ["SUM", "AVERAGE", "MIN", "MAX", "COUNT", "COUNTA", "COUNTBLANK", "PRODUCT", "SUMPRODUCT", "IF", "IFS", "IFERROR", "AND", "OR", "NOT", "TRUE", "FALSE", "ABS", "SQRT", "ROUND", "ROUNDUP", "ROUNDDOWN", "INT", "MOD", "POWER", "EXP", "LN", "LOG", "SIN", "COS", "TAN", "PI", "SIGN", "CONCAT", "CONCATENATE", "TEXTJOIN", "LEFT", "RIGHT", "MID", "LEN", "TRIM", "UPPER", "LOWER", "SUBSTITUTE", "REPLACE", "FIND", "SEARCH", "EXACT", "VALUE", "TEXT", "DATE", "DAY", "MONTH", "YEAR", "TODAY", "NOW", "WEEKDAY", "SUMIF", "COUNTIF", "AVERAGEIF", "VLOOKUP", "XLOOKUP", "INDEX", "MATCH", "ROW", "COLUMN", "ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "PMT", "SEQUENCE", "FILTER", "SORT", "SORTBY", "UNIQUE", "TRANSPOSE", "TAKE", "DROP", "HSTACK", "VSTACK", "CHOOSECOLS", "CHOOSEROWS", "LET"];
     private CalcValue Call(CallExpr call, Worksheet sheet, CellAddress origin)
     {
         var expressions = call.Arguments;
         CalcValue At(int index) => index < expressions.Count ? Eval(expressions[index], sheet, origin) : CalcValue.Blank;
-        if (call.Name == "IF") { var condition = At(0); return condition.IsError ? condition : condition.Truth ? At(1) : expressions.Count > 2 ? At(2) : CalcValue.Bool(false); }
-        if (call.Name == "IFERROR") { var result = At(0); return result.IsError ? At(1) : result; }
+        if (call.Name is "NOW" or "TODAY" || _custom.ContainsKey(call.Name))
+            if (_stack.TryPeek(out var volatileCell)) _volatile.Add(volatileCell);
+        if (call.Name == "ANCHORARRAY")
+        {
+            if (expressions is not [RefExpr reference]) return CalcValue.Error("#REF!");
+            var target = reference.Sheet is null ? sheet : Workbook.FindSheet(reference.Sheet);
+            return target is null ? CalcValue.Error("#REF!") : ReadSpill(new(target, CellAddress.Parse(reference.Address)));
+        }
+        if (call.Name == "LET") return Let(expressions, sheet, origin);
+        if (call.Name == "IF")
+        {
+            if (expressions.Count is < 2 or > 3) return CalcValue.Error("#VALUE!");
+            var condition = At(0);
+            if (condition.Kind == ValueKind.Array) return ArrayOperations.If(condition, At(1), expressions.Count > 2 ? At(2) : CalcValue.Bool(false));
+            return condition.IsError ? condition : condition.Truth ? At(1) : expressions.Count > 2 ? At(2) : CalcValue.Bool(false);
+        }
+        if (call.Name == "IFERROR")
+        {
+            var result = At(0);
+            if (result.Kind == ValueKind.Array && result.Items!.Any(v => v.IsError))
+                return ArrayOperations.Zip(result, At(1), (a, b) => a.IsError ? b : a);
+            return result.IsError ? At(1) : result;
+        }
         if (call.Name == "IFS") { for (var i = 0; i + 1 < expressions.Count; i += 2) { var condition = At(i); if (condition.IsError) return condition; if (condition.Truth) return At(i + 1); } return CalcValue.Error("#N/A"); }
         if (call.Name == "ISERROR") return CalcValue.Bool(At(0).IsError);
         if (call.Name is "ROW" or "COLUMN")
@@ -22,6 +43,7 @@ public sealed partial class CalculationEngine
         }
         var args = expressions.Select(e => Eval(e, sheet, origin)).ToArray();
         if (_custom.TryGetValue(call.Name, out var custom)) return custom(args);
+        if (ArrayOperations.FunctionNames.Contains(call.Name)) return ArrayOperations.Call(call.Name, args);
         var flat = args.SelectMany(v => v.Flatten()).ToArray();
         var error = flat.FirstOrDefault(v => v.IsError); if (error.IsError) return error;
         CalcValue V(int i) => i < args.Length ? args[i] : CalcValue.Blank;
@@ -135,6 +157,23 @@ public sealed partial class CalculationEngine
                 var factor = Math.Pow(1 + rate, periods); return CalcValue.Num(-(rate * (N(2) * factor + N(3))) / ((1 + rate * N(4)) * (factor - 1)));
             default: return CalcValue.Error("#NAME?");
         }
+    }
+    private CalcValue Let(IReadOnlyList<Expr> expressions, Worksheet sheet, CellAddress origin)
+    {
+        if (expressions.Count < 3 || expressions.Count % 2 != 1 || expressions.Count > 253) return CalcValue.Error("#VALUE!");
+        var previous = _locals;
+        _locals = previous is null ? new(StringComparer.OrdinalIgnoreCase) : new(previous, StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            for (var i = 0; i < expressions.Count - 1; i += 2)
+            {
+                if (expressions[i] is not NameExpr name || name.Name.Equals("R", StringComparison.OrdinalIgnoreCase) || name.Name.Equals("C", StringComparison.OrdinalIgnoreCase)) return CalcValue.Error("#NAME?");
+                var value = Eval(expressions[i + 1], sheet, origin);
+                _locals[name.Name] = value;
+            }
+            return Eval(expressions[^1], sheet, origin);
+        }
+        finally { _locals = previous; }
     }
     private static DateTime NForDate(double serial) => DateTime.FromOADate(serial);
     private static double Round(double value, int digits, int direction)

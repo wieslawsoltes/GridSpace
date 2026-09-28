@@ -3,7 +3,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>14</LangVersion>
-    <Version>0.2.0-alpha.1</Version>
+    <Version>0.3.0-alpha.1</Version>
     <Authors>Wiesław Šoltés; GridSpace contributors</Authors>
     <Company>GridSpace</Company>
     <RepositoryUrl>https://github.com/wieslawsoltes/GridSpace</RepositoryUrl>

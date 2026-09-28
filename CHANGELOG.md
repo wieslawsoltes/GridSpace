@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0-alpha.1
+
+Dynamic array expressions, twelve array functions, lexical LET, virtual spill ownership, # references, blocked/cyclic output detection and protected spill followers. Standard dynamic-array XLSX metadata and cached results roundtrip through the supported formula subset.
+
+Cell edits, formatting, paste, fill and clear use delta history. A bounded mutation journal drives dependency-based scalar invalidation; style-only edits retain calculations. Viewport indexes survive selection, scrolling and cell edits, and selection summaries are cached. The new benchmark executable measures engine time and allocations without brittle CI timing gates.
+
+See [arrays and performance](docs/arrays-performance.md) for behavior, limits, reproducible measurements and remaining compatibility boundaries.
+
 ## 0.2.0-alpha.1
 
 ### Added

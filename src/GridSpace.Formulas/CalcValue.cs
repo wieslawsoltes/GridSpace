@@ -10,6 +10,11 @@ public readonly record struct CalcValue
     public string Text { get; init; }
     public IReadOnlyList<CalcValue>? Items { get; init; }
     public int Columns { get; init; }
+    public int Rows => Kind == ValueKind.Array ? (Items?.Count ?? 0) / Math.Max(1, Columns) : 1;
+    public int Width => Kind == ValueKind.Array ? Columns : 1;
+    public CalcValue Element(int row, int column) => Kind == ValueKind.Array
+        ? row >= 0 && row < Rows && column >= 0 && column < Columns ? Items![row * Columns + column] : Error("#N/A")
+        : row == 0 && column == 0 ? this : Error("#N/A");
     public bool IsError => Kind == ValueKind.Error;
     public bool IsNumeric => Kind is ValueKind.Number or ValueKind.Boolean or ValueKind.Blank;
     public static CalcValue Blank => new() { Kind = ValueKind.Blank, Text = "" };
@@ -17,7 +22,13 @@ public readonly record struct CalcValue
     public static CalcValue Str(string text) => new() { Kind = ValueKind.Text, Text = text };
     public static CalcValue Bool(bool value) => new() { Kind = ValueKind.Boolean, Number = value ? 1 : 0, Text = "" };
     public static CalcValue Error(string text) => new() { Kind = ValueKind.Error, Text = text };
-    public static CalcValue Array(IReadOnlyList<CalcValue> items, int columns) => new() { Kind = ValueKind.Array, Items = items, Columns = columns, Text = "" };
+    public static CalcValue Array(IReadOnlyList<CalcValue> items, int columns)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        if (columns <= 0 || items.Count == 0 || items.Count % columns != 0) return Error("#CALC!");
+        if (items.Count > 100_000) return Error("#LIMIT!");
+        return new() { Kind = ValueKind.Array, Items = items, Columns = columns, Text = "" };
+    }
     public bool TryNumber(out double number)
     {
         number = Number;
