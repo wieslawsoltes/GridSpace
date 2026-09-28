@@ -23,9 +23,9 @@ The first six libraries are independent of Uno. Controls and Workbench target Un
 
 Worksheets store populated cells in address-keyed dictionaries. Axis sizes, hidden indexes and data-tool definitions are sparse metadata. Cells/styles/rule/filter/sort definitions are records; workbook and worksheet containers are mutable and single-owner.
 
-`SpreadsheetSession.Perform` records native JSON before and after an edit, rolls back failures and provides bounded undo/redo. Nested operations join the outer transaction. History has at most 40 entries and an approximate 32-million-character accounting threshold. Snapshot history is deterministic but costs O(document size) per transaction; it is not persistent structural sharing.
+Cell-oriented commands use `ApplyCells`: all changes are prepared and validated before mutation, and undo retains immutable before/after cells instead of serializing the entire workbook. `SpreadsheetSession.Perform` remains the snapshot boundary for structural and general metadata commands, rolls back failures and joins nested operations. History retains at most 40 entries with an approximate 32 MB accounting threshold; one oversized entry may remain. Snapshot commands still cost O(document size).
 
-Restoring history or loading replaces the workbook and calculator. Consumers must read `session.Book` and `session.Sheet`, not retain obsolete worksheet instances. A live session is not thread-safe. Background calculations should operate on a snapshot and marshal results to the owning UI thread.
+Cell-delta undo/redo preserves workbook, worksheet and calculator identity. Restoring a structural snapshot or loading replaces them. Consumers must read `session.Book` and `session.Sheet`, not retain obsolete worksheet instances across structural history. A live session is not thread-safe. Background calculations should operate on a snapshot and marshal results to the owning UI thread.
 
 ## Structural transforms
 
@@ -37,7 +37,9 @@ Deleting a worksheet rewrites supported references immediately to `#REF!`, preve
 
 ## Calculation and conditional formatting
 
-The parser builds expression trees. The calculator caches parsed formulas and values by workbook revision, tracks active evaluation paths for cycles and bounds evaluation depth/range/work. It does not yet have an incremental dependency DAG or topological dirty propagation.
+The parser builds scalar and rectangular-array expression trees. A bounded 8,192-entry mutation journal distinguishes cell input changes from style-only changes. Direct/reverse dependency sets invalidate the transitive users of edited scalar inputs while retaining independent values. Structural mutations, journal eviction or dependency-budget overflow fall back to full invalidation. Parsed formulas and non-empty cell values are bounded; active evaluation paths detect cycles. This is single-owner demand-driven evaluation, not a parallel calculation scheduler.
+
+Spill ownership is derived state. Only anchors store expressions; followers refer to a bounded virtual result map. Input mutations conservatively reconcile potential spill anchors and invalidate consumers of their previous output. Scalar dependencies remain incremental, but array ranges are not updated element-by-element.
 
 `ConditionalFormattingEngine` consumes the calculator and returns an effective style plus an optional data-bar visual. It never mutates base styles. Rules are priority ordered; nullable differential properties compose independently with first-set-wins precedence. Matching Stop If True rules terminate boolean-rule evaluation. Statistical ranges, numeric distributions and typed value frequencies are cached by workbook revision. Relative rule expressions are translated from the range's top-left anchor to the queried cell.
 
@@ -76,3 +78,7 @@ The XLSX reader/writer handles its explicit OOXML subset with bounded ZIP/XML pr
 Engine tests include semantic invariants, seeded transform regressions and pixel assertions. Independent Open XML SDK schema validation catches format errors that self-roundtrips alone could miss. Browser tests perform physical UI input using opt-in read-only state and geometry snapshots. `?test=1` disables recovery access and exposes no mutation bridge. Production startup never attaches the diagnostics timer.
 
 Deployment requires a successful main build, verifies `build-info.json` provenance and repeats the physical-input browser suite against the public Pages URL. Native CI builds all three desktop platforms, but does not replace manual testing of native pickers, IME, accessibility or physical touch hardware.
+
+## 0.3 ownership and performance
+
+See [arrays and performance](arrays-performance.md) for the mutation journal, delta history, virtual spill map, cache bounds, geometry reuse and measured baseline comparison. Direct container mutation still requires `Workbook.Touch()` or `Attach()`; single-owner sessions are not thread-safe.

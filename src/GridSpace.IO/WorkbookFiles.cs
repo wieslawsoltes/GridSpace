@@ -30,9 +30,8 @@ public static class WorkbookFiles
     public static byte[] Native(Workbook book) => Encoding.UTF8.GetBytes(book.ToJson());
     public static byte[] Csv(Workbook book, char separator = ',')
     {
-        var sheet = book.ActiveSheet; var range = sheet.UsedRange;
+        var sheet = book.ActiveSheet; var engine = new CalculationEngine(book); var range = engine.CalculatedUsedRange(sheet);
         if ((long)(range.Bottom + 1) * (range.Right + 1) > 200_000) throw new InvalidOperationException("CSV export is limited to a 200,000-cell rectangle from A1 to the last used cell.");
-        var engine = new CalculationEngine(book);
         var rows = Enumerable.Range(0, range.Bottom + 1).Select(r => Enumerable.Range(0, range.Right + 1).Select(c =>
         {
             var value = engine.Evaluate(sheet, new CellAddress(r, c)); var text = value.ToString();

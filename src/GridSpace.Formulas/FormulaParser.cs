@@ -8,6 +8,8 @@ internal abstract record Expr;
 internal sealed record LiteralExpr(CalcValue Value) : Expr;
 internal sealed record RefExpr(string? Sheet, string Address) : Expr;
 internal sealed record RangeExpr(RefExpr First, RefExpr Last) : Expr;
+internal sealed record ArrayExpr(IReadOnlyList<Expr> Items, int Columns) : Expr;
+internal sealed record SpillExpr(RefExpr Anchor) : Expr;
 internal sealed record NameExpr(string Name) : Expr;
 internal sealed record UnaryExpr(string Operator, Expr Operand) : Expr;
 internal sealed record BinaryExpr(string Operator, Expr Left, Expr Right) : Expr;
@@ -57,7 +59,7 @@ internal sealed class FormulaParser
                 while (i < formula.Length && (char.IsLetterOrDigit(formula[i]) || formula[i] is '_' or '$' or '.')) i++;
                 _tokens.Add(new("id", formula[start..i])); continue;
             }
-            if (ch == '#')
+            if (ch == '#' && i + 1 < formula.Length && char.IsAsciiLetter(formula[i + 1]))
             {
                 var start = i++;
                 while (i < formula.Length && (char.IsAsciiLetterOrDigit(formula[i]) || formula[i] is '/' or '!' or '?' or '_')) i++;
@@ -84,6 +86,27 @@ internal sealed class FormulaParser
         if (Take("+")) left = new UnaryExpr("+", Expression(6));
         else if (Take("-")) left = new UnaryExpr("-", Expression(6));
         else if (Take("(")) { left = Expression(0); Require(")"); }
+        else if (Take("{"))
+        {
+            var items = new List<Expr>();
+            var width = 0;
+            do
+            {
+                var start = items.Count;
+                do
+                {
+                    var item = Expression(0);
+                    if (item is not LiteralExpr && item is not UnaryExpr { Operand: LiteralExpr })
+                        throw new FormatException("Array constants contain literals only.");
+                    items.Add(item);
+                } while (Take(","));
+                var columns = items.Count - start;
+                if (width != 0 && width != columns) throw new FormatException("Array rows must have the same width.");
+                width = columns;
+            } while (Take(";"));
+            Require("}");
+            left = new ArrayExpr(items, width);
+        }
         else if (Current.Kind == "number") { left = new LiteralExpr(CalcValue.Num(double.Parse(Current.Text, CultureInfo.InvariantCulture))); _index++; }
         else if (Current.Kind == "string") { left = new LiteralExpr(CalcValue.Str(Current.Text)); _index++; }
         else if (Current.Kind == "error") { left = new LiteralExpr(CalcValue.Error(Current.Text)); _index++; }
@@ -99,7 +122,9 @@ internal sealed class FormulaParser
                     while (Take(",") || Take(";"));
                     Require(")");
                 }
-                left = new CallExpr(identifier.ToUpperInvariant(), arguments);
+                var name = identifier.ToUpperInvariant();
+                name = name.Replace("_XLFN.", "", StringComparison.Ordinal).Replace("_XLWS.", "", StringComparison.Ordinal);
+                left = new CallExpr(name, arguments);
             }
             else if (Take("!"))
             {
@@ -122,6 +147,12 @@ internal sealed class FormulaParser
         else throw new FormatException("Expected a value.");
         while (true)
         {
+            if (Current.Kind == "#" && left is RefExpr spillAnchor)
+            {
+                _index++;
+                left = new SpillExpr(spillAnchor);
+                continue;
+            }
             if (Take("%")) { left = new UnaryExpr("%", left); continue; }
             var op = Current.Kind;
             var precedence = op switch { "=" or "<>" or "<" or ">" or "<=" or ">=" => 1, "&" => 2, "+" or "-" => 3, "*" or "/" => 4, "^" => 5, _ => -1 };

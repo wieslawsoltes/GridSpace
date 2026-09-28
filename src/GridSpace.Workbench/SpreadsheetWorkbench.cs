@@ -85,7 +85,8 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
     private void Update()
     {
         _title.Text = Session.Book.Title + (Session.IsDirty ? " •" : ""); _title.TextTrimming = TextTrimming.CharacterEllipsis;
-        _formula.Update(Session.Selection.ToString(), Session.Sheet.Get(Session.ActiveCell).Input);
+        _formula.Update(Session.Selection.ToString(), Session.FormulaInput);
+        _formula.SetReadOnly(Session.IsSpillFollower);
         _tabs.Update(Session.Book); UpdateStatus();
     }
     private void UpdateStatus() => _statusBar.Update(_status, Session.SelectionSummary(), Surface.Viewport.Zoom, _statusError);

@@ -4,6 +4,12 @@
 <p align="center"><a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml/badge.svg" alt="Build and browser validation" /></a> <a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml/badge.svg" alt="Desktop builds" /></a> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" /></p>
 <p align="center"><a href="https://wieslawsoltes.github.io/GridSpace/">Open browser app</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/compatibility.md">Compatibility</a> · <a href="docs/parity-data-tools.md">Data tools</a> · <a href="docs/development.md">Development</a></p>
 
+## New in 0.3
+
+Dynamic arrays now spill through the real worksheet: `SEQUENCE`, `FILTER`, `SORT`, `SORTBY`, `UNIQUE`, `TRANSPOSE`, `TAKE`, `DROP`, `HSTACK`, `VSTACK`, `CHOOSECOLS`, `CHOOSEROWS`, array constants, broadcasting, `LET`, and `A1#` references. Spilled followers are protected and display their anchor formula. Supported dynamic arrays export standard XLSX metadata and calculated caches.
+
+Cell-oriented commands retain deltas instead of whole-workbook JSON snapshots; scalar recalculation invalidates dependent cells, and view-only updates reuse geometry and selection summaries. See [array behavior and measured performance](docs/arrays-performance.md) for reproducible results and limits.
+
 ## The project
 
 GridSpace combines an Excel-style ribbon, formula bar, worksheet tabs and green selection language with a real C# workbook engine. The worksheet is drawn by **SkiaSharp through Uno's `SKCanvasElement`**, not by an HTML table or a separate JavaScript spreadsheet. Desktop and browser hosts share the model, calculations, transactions and controls.
@@ -138,7 +144,7 @@ Browser acceptance uses physical keyboard and pointer events. A `?test=1` read-o
 
 ## Important boundaries
 
-VBA, PivotTables, Power Query, external-data refresh, multiplayer editing, Excel add-ins, dynamic-array spilling, lossless arbitrary OOXML preservation, full print/page layout and complete virtualized-cell accessibility remain unimplemented. The custom workbench still uses Uno input/dialog primitives. Conditional-format clipboard propagation, arbitrary cell-shift deletion and advanced filter/chart variants also remain outside this increment.
+VBA, PivotTables, Power Query, external-data refresh, multiplayer editing, Excel add-ins, complete array/LAMBDA semantics, lossless arbitrary OOXML preservation, full print/page layout and complete virtualized-cell accessibility remain unimplemented. The custom workbench still uses Uno input/dialog primitives. Conditional-format clipboard propagation, arbitrary cell-shift deletion and advanced filter/chart variants also remain outside this increment.
 
 The alpha bounds expensive work: 100,000 cells per bulk edit, conditional range or sort; 100,000 filter data rows; 200,000 stored cells per imported sheet; 256 sheets; and 32 MB native/file import. See [compatibility](docs/compatibility.md) for exact subset behavior and limitations.
 

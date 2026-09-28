@@ -27,15 +27,21 @@ public sealed partial class Worksheet
     public string? FilterRange { get; set; }
     public string TabColor { get; set; } = "#107C41";
     [JsonIgnore] public Action? Changed { get; set; }
-    public Cell Get(CellAddress address) => Cells.TryGetValue(address.ToString(), out var value) ? value : new();
+    [JsonIgnore] internal Action<Worksheet, CellAddress, bool>? CellChanged { get; set; }
+    public Cell Get(CellAddress address) => Cells.TryGetValue(address.ToString(), out var value) ? value : Cell.Empty;
     public Cell Get(string address) => Get(CellAddress.Parse(address));
     public void Set(CellAddress address, Cell cell)
     {
+        ArgumentNullException.ThrowIfNull(cell);
+        ArgumentNullException.ThrowIfNull(cell.Input);
         if (!address.IsValid) throw new ArgumentOutOfRangeException(nameof(address));
         if (cell.Input.Length > 32767) throw new InvalidOperationException("A cell cannot contain more than 32,767 characters.");
+        var before = Get(address);
+        if (before == cell) return;
         if (string.IsNullOrEmpty(cell.Input) && cell.Style == CellStyle.Default && string.IsNullOrEmpty(cell.Note)) Cells.Remove(address.ToString());
         else Cells[address.ToString()] = cell;
-        Changed?.Invoke();
+        if (CellChanged is { } changed) changed(this, address, before.Input != cell.Input);
+        else Changed?.Invoke();
     }
     public void Set(string address, string input) { var a = CellAddress.Parse(address); Set(a, Get(a) with { Input = input }); }
     public bool IsRowHidden(int row) => HiddenRows.Contains(row) || FilteredRows.Contains(row);
