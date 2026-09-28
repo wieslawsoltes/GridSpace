@@ -7,7 +7,7 @@ public static class FormulaReferences
 {
     private const string SheetPattern = "'(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*";
     private static readonly Regex Reference = new(
-        @"(?<![\w.\]])(?:(?<sheet>" + SheetPattern + @")!)?(?<col>\$?[A-Za-z]{1,3})(?<row>\$?[1-9][0-9]*)(?:\s*:\s*(?:(?<sheet2>" + SheetPattern + @")!)?(?<col2>\$?[A-Za-z]{1,3})(?<row2>\$?[1-9][0-9]*))?(?![\w.(])",
+        @"(?<![\w.\]])(?:(?<sheet>" + SheetPattern + @")!)?(?<col>\$?[A-Za-z]{1,3})(?<row>\$?[1-9][0-9]*)(?:\s*:\s*(?:(?<sheet2>" + SheetPattern + @")!)?(?<col2>\$?[A-Za-z]{1,3})(?<row2>\$?[1-9][0-9]*))?(?![\w.(])(?<spill>#)?",
         RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
 
     public static string Translate(string formula, int rows, int columns) => Rewrite(formula, match =>
@@ -97,6 +97,14 @@ public static class FormulaReferences
             }
             else quoted[i] = inside;
         }
-        return Reference.Replace(formula, match => quoted[match.Index] ? match.Value : evaluator(match));
+        return Reference.Replace(formula, match =>
+        {
+            if (quoted[match.Index]) return match.Value;
+            var replacement = evaluator(match);
+            // The spill suffix belongs to the reference, not to a resulting error literal.
+            // Keep it when moving/renaming a valid anchor; discard it when that anchor is deleted.
+            return replacement == "#REF!" || !match.Groups["spill"].Success || replacement.EndsWith('#')
+                ? replacement : replacement + "#";
+        });
     }
 }
