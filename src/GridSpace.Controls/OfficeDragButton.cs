@@ -11,7 +11,6 @@ public sealed class OfficeDragButton : OfficeButton
     private Point _start;
     private bool _dragging;
     private bool _releasing;
-    private bool _suppressClick;
 
     public FrameworkElement? DragCoordinateRoot { get; set; }
     public bool IsDragging => _dragging;
@@ -34,7 +33,9 @@ public sealed class OfficeDragButton : OfficeButton
         base.OnPointerPressed(e);
         if (_pointer is not null || !IsEnabled || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         _start = Position(e);
-        if (CapturePointer(e.Pointer)) _pointer = e.Pointer;
+        // ButtonBase may already own the capture after processing PointerPressed.
+        if (CapturePointer(e.Pointer) || PointerCaptures?.Any(p => p.PointerId == e.Pointer.PointerId) == true)
+            _pointer = e.Pointer;
     }
 
     protected override void OnPointerMoved(PointerRoutedEventArgs e)
@@ -56,16 +57,16 @@ public sealed class OfficeDragButton : OfficeButton
         var point = Position(e);
         var commit = _dragging;
         _releasing = true;
-        _suppressClick = commit;
         try
         {
-            // Release native button state/capture without letting a drag also raise Click.
-            base.OnPointerReleased(e);
+            // Only a click goes through ButtonBase's release path. A drag releases capture
+            // instead; OnPointerCaptureLost resets the native pressed state without Click.
+            if (!commit) base.OnPointerReleased(e);
             ReleasePointerCaptures();
         }
         finally
         {
-            _pointer = null; _dragging = false; _releasing = false; _suppressClick = false;
+            _pointer = null; _dragging = false; _releasing = false;
         }
         if (commit) { DragCommitted?.Invoke(point); e.Handled = true; }
     }
@@ -82,19 +83,13 @@ public sealed class OfficeDragButton : OfficeButton
         CancelDrag();
     }
 
-    protected override void OnClick()
-    {
-        if (!_dragging && !_suppressClick) base.OnClick();
-    }
-
     public void CancelDrag()
     {
         if (_pointer is null) return;
         _pointer = null;
         _dragging = false;
-        _suppressClick = true;
-        try { ReleasePointerCaptures(); DragCancelled?.Invoke(); }
-        finally { _suppressClick = false; }
+        ReleasePointerCaptures();
+        DragCancelled?.Invoke();
     }
 
     private Point Position(PointerRoutedEventArgs e) => e.GetCurrentPoint(DragCoordinateRoot ?? this).Position;
