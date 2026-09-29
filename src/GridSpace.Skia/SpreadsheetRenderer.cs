@@ -48,6 +48,6 @@ public sealed partial class SpreadsheetRenderer : IDisposable
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; Fonts.Dispose(); _paint.Dispose(); _line.Dispose();
+        if (_disposed) return; _disposed = true; _charts?.Dispose(); Fonts.Dispose(); _paint.Dispose(); _line.Dispose();
     }
 }

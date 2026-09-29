@@ -36,7 +36,7 @@ public static partial class XlsxWorkbook
         new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root).Save(writer);
     }
 
-    private static Dictionary<string, string> Relationships(ZipArchive zip, string part)
+    private static Dictionary<string, string> Relationships(ZipArchive zip, string part, string? relationshipType = null)
     {
         var slash = part.LastIndexOf('/'); var folder = slash < 0 ? "" : part[..(slash + 1)]; var file = part[(slash + 1)..];
         var path = folder + "_rels/" + file + ".rels";
@@ -45,6 +45,7 @@ public static partial class XlsxWorkbook
         foreach (var rel in Xml(zip, path).Root!.Elements(P + "Relationship"))
         {
             if ((string?)rel.Attribute("TargetMode") == "External") continue;
+            if (relationshipType is not null && (string?)rel.Attribute("Type") != RelBase + relationshipType) continue;
             var target = (string?)rel.Attribute("Target") ?? "";
             var normalized = new Uri(new Uri("https://workbook.invalid/" + part), target).AbsolutePath.TrimStart('/');
             if (!normalized.StartsWith("xl/", StringComparison.Ordinal)) continue;

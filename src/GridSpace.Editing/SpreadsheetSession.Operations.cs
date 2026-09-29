@@ -37,6 +37,13 @@ public sealed partial class SpreadsheetSession
         var old = Sheet.Name;
         if (Book.FindSheet(name) is { } other && other != Sheet) throw new InvalidOperationException("A sheet with this name already exists.");
         RewriteWorkbookReferences((formula, _) => FormulaReferences.RenameSheet(formula, old, name));
+        foreach (var host in Book.Sheets)
+        {
+            foreach (var chart in host.Charts)
+                if (!chart.SourceUnavailable && chart.SourceSheet?.Equals(old, StringComparison.OrdinalIgnoreCase) == true) chart.SourceSheet = name;
+            foreach (var pivot in host.PivotTables)
+                if (pivot.SourceSheet.Equals(old, StringComparison.OrdinalIgnoreCase)) pivot.SourceSheet = name;
+        }
         Sheet.Name = name;
     });
     public void DuplicateSheet() => Perform("Duplicate worksheet", () =>
@@ -44,6 +51,17 @@ public sealed partial class SpreadsheetSession
         var single = new Workbook { Sheets = [Sheet] };
         var copy = Workbook.FromJson(single.ToJson()).Sheets[0];
         copy.Name = UniqueSheetName(Sheet.Name + " ");
+        var ids = copy.PivotTables.ToDictionary(p => p.Id, _ => Guid.NewGuid().ToString("N"));
+        var names = Book.Sheets.SelectMany(s => s.PivotTables).Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        copy.PivotTables = copy.PivotTables.Select(p =>
+        {
+            var name = p.Name; var number = 1;
+            while (!names.Add(name)) name = p.Name[..Math.Min(110, p.Name.Length)] + "_Copy" + number++;
+            return p with { Id = ids[p.Id], Name = name, SourceSheet = p.SourceSheet.Equals(Sheet.Name, StringComparison.OrdinalIgnoreCase) ? copy.Name : p.SourceSheet };
+        }).ToList();
+        copy.Charts = copy.Charts.Select(c => c with { Id = Guid.NewGuid().ToString("N"),
+            SourceSheet = c.SourceSheet?.Equals(Sheet.Name, StringComparison.OrdinalIgnoreCase) == true ? copy.Name : c.SourceSheet,
+            PivotTableId = c.PivotTableId is { } id && ids.TryGetValue(id, out var mapped) ? mapped : c.PivotTableId }).ToList();
         Book.Sheets.Insert(Book.ActiveSheetIndex + 1, copy);
         Book.ActiveSheetIndex++;
     });
@@ -51,6 +69,11 @@ public sealed partial class SpreadsheetSession
     {
         if (Book.Sheets.Count == 1) throw new InvalidOperationException("A workbook must have at least one worksheet.");
         var deleted = Sheet.Name;
+        if (Book.Sheets.Where(s => s != Sheet).SelectMany(s => s.PivotTables).Any(p => p.SourceSheet.Equals(deleted, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Remove the dependent PivotTables before deleting their source worksheet.");
+        foreach (var host in Book.Sheets.Where(s => s != Sheet))
+            foreach (var chart in host.Charts)
+                if (chart.SourceSheet?.Equals(deleted, StringComparison.OrdinalIgnoreCase) == true) chart.SourceUnavailable = true;
         Book.Sheets.RemoveAt(Book.ActiveSheetIndex);
         Book.ActiveSheetIndex = Math.Min(Book.ActiveSheetIndex, Book.Sheets.Count - 1);
         RewriteWorkbookReferences((formula, _) => FormulaReferences.DeleteSheet(formula, deleted));
@@ -62,6 +85,7 @@ public sealed partial class SpreadsheetSession
     {
         if (Selection.Count == 1) return;
         var range = Selection.Normalized;
+        RejectPivotWrite(range);
         if (Sheet.Merges.Any(m => m.Intersects(range))) throw new InvalidOperationException("Unmerge overlapping cells first.");
         if (range.Cells().Skip(1).Any(a => Sheet.Get(a).Input != "")) throw new InvalidOperationException("Only the upper-left cell may contain data. Clear other cells before merging.");
         Sheet.Merges.Add(range);
@@ -119,6 +143,7 @@ public sealed partial class SpreadsheetSession
             {
                 var cell = Sheet.Cells[key];
                 if (!cell.Input.Contains(find, StringComparison.OrdinalIgnoreCase)) continue;
+                if (PivotAt(CellAddress.Parse(key)) is not null) continue;
                 Sheet.Set(CellAddress.Parse(key), cell with { Input = cell.Input.Replace(find, replacement, StringComparison.OrdinalIgnoreCase) });
                 count++;
             }
@@ -139,10 +164,11 @@ public sealed partial class SpreadsheetSession
         Perform("Define name", () => Book.Names[name] = "'" + Sheet.Name.Replace("'", "''") + "'!" + Selection);
     }
     public void SetValidation(string[] values) => Perform("Data validation", () => Sheet.ValidationLists[Selection.ToString()] = values.Where(v => v.Length > 0).Distinct().ToArray());
-    public void AddChart(ChartKind kind) => Perform("Insert chart", () =>
+    public void AddChart(ChartKind kind)
     {
-        var range = DataRange();
-        Sheet.Charts.Add(new() { Title = "Chart title", Kind = kind, Range = range.ToString(), Row = range.Top + 2, Column = Math.Min(range.Right + 2, CellAddress.MaxColumns - 1) });
-    });
+        var range = Selection.Count == 1 ? Sheet.UsedRange : Selection.Normalized;
+        AddChart(new ChartSpec { Title = "Chart title", Kind = kind, Range = range.ToString(),
+            Row = range.Top + 2, Column = Math.Min(range.Right + 2, CellAddress.MaxColumns - 1) });
+    }
     public void AddNote(string note) => Perform("Cell note", () => Sheet.Set(ActiveCell, Sheet.Get(ActiveCell) with { Note = note }));
 }

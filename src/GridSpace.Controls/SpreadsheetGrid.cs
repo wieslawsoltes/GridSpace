@@ -46,7 +46,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     public event Action<string>? Error;
     public event Action<Point>? ContextRequested;
     public event Action? ViewChanged;
-    public bool IsEditing => _editor is not null;
+    public bool IsEditing => _editor is not null || _chartTitleEditor is not null;
     public SpreadsheetSession? Session
     {
         get => _session;
@@ -84,24 +84,39 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
         _vertical.ValueChanged += value => ScrollTo(Viewport.ScrollX, value);
         _canvas.PointerPressed += Pressed; _canvas.PointerMoved += Moved; _canvas.PointerReleased += Released;
         _canvas.PointerCanceled += (_, _) => CancelGesture();
-        _canvas.PointerCaptureLost += (_, _) => { if (_gesture != Gesture.None) CancelGesture(); };
+        _canvas.PointerCaptureLost += (_, _) => { if (_gesture != Gesture.None || _chartDragStart is not null) CancelGesture(); };
         _canvas.PointerWheelChanged += Wheel;
         _canvas.DoubleTapped += (_, e) =>
         {
             if (Session is null) return;
-            var p = e.GetPosition(_canvas); var hit = Viewport.HitTest(p.X, p.Y);
+            var p = e.GetPosition(_canvas);
+            if (TryChartDoubleTap(p)) { e.Handled = true; return; }
+            var hit = Viewport.HitTest(p.X, p.Y);
+            if (hit.Kind == GridHitKind.Cell && Session.PivotAt(new CellAddress(hit.Row, hit.Column)) is { } pivot
+                && hit.Row > pivot.Anchor.Row && hit.Column >= pivot.Anchor.Column + Math.Max(1, pivot.Rows.Count))
+            {
+                PivotDrillDownRequested?.Invoke(new CellAddress(hit.Row, hit.Column)); e.Handled = true; return;
+            }
             if (hit.Kind == GridHitKind.ColumnHeader) Run(() => Session.SetColumnWidth(hit.Column, Renderer.MeasureColumn(Session, hit.Column)));
             else if (hit.Kind == GridHitKind.Cell) BeginEdit();
             e.Handled = true;
         };
-        _canvas.RightTapped += (_, e) => { ContextRequested?.Invoke(e.GetPosition(this)); e.Handled = true; };
+        _canvas.RightTapped += (_, e) =>
+        {
+            var point = e.GetPosition(_canvas);
+            var chart = Session is null ? null : ChartGeometry.HitTest(Session.Sheet.Charts, Viewport, point.X, point.Y, SelectedChartId);
+            if (chart is { } hit) { SelectChart(hit.Id); CommandRequested?.Invoke("chart-format"); }
+            else ContextRequested?.Invoke(e.GetPosition(this));
+            e.Handled = true;
+        };
         KeyDown += HandleKey;
     }
     private void SessionChanged(object? sender, SessionChangedEventArgs args)
     {
         if (Session is null) return;
         RefreshGeometry();
-        if (args.Reason is "Switch worksheet" or "Open workbook" or "Insert worksheet") { CancelEdit(); Viewport.ScrollTo(0, 0); }
+        if (args.Reason is "Switch worksheet" or "Open workbook" or "Insert worksheet") { SelectChart(null); CancelEdit(); Viewport.ScrollTo(0, 0); }
+        if (SelectedChartId is not null && SelectedChart is null) SelectChart(null);
         Invalidate();
         AutomationProperties.SetHelpText(this, Session.Sheet.Name + "!" + Session.Selection + ": " + Session.Calculation.Evaluate(Session.Sheet, Session.ActiveCell));
     }
@@ -110,16 +125,18 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
         _canvas.Invalidate();
         _horizontal.SetRange(Viewport.MaximumScrollX, Math.Max(1, Viewport.Width - GridViewport.RowHeaderWidth) / Viewport.Zoom, Viewport.ScrollX);
         _vertical.SetRange(Viewport.MaximumScrollY, Math.Max(1, Viewport.Height - GridViewport.ColumnHeaderHeight) / Viewport.Zoom, Viewport.ScrollY);
-        PositionEditor(); ViewChanged?.Invoke();
+        PositionEditor(); PositionChartTitle(); ViewChanged?.Invoke();
     }
     public void FocusGrid() => Focus(FocusState.Programmatic);
     public void ScrollTo(double x, double y) { Viewport.ScrollTo(x, y); Invalidate(); }
-    public void SetZoom(double zoom) { Viewport.Zoom = zoom; if (Session is not null) Viewport.EnsureVisible(Session.ActiveCell); Invalidate(); }
-    public void RevealSelection() { if (Session is not null) Viewport.EnsureVisible(Session.ActiveCell); Invalidate(); }
+    public void SetZoom(double zoom) { Viewport.Zoom = zoom; if (SelectedChart is not null) RevealChart(); else if (Session is not null) Viewport.EnsureVisible(Session.ActiveCell); Invalidate(); }
+    public void RevealSelection() { if (Session is not null && SelectedChartId is null) Viewport.EnsureVisible(Session.ActiveCell); Invalidate(); }
     private void Run(Action action) { try { action(); } catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException) { Error?.Invoke(e.Message); } }
     private void Pressed(object sender, PointerRoutedEventArgs e)
     {
         if (Session is null || !CommitEdit()) return;
+        if (TryChartPressed(e)) return;
+        SelectChart(null);
         FocusGrid(); var point = e.GetCurrentPoint(_canvas); var p = point.Position; var hit = Viewport.HitTest(p.X, p.Y);
         if (hit.Kind == GridHitKind.None) return;
         _pointerStart = p; _source = Session.Selection; _gesture = Gesture.Select;
@@ -152,6 +169,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     }
     private void Moved(object sender, PointerRoutedEventArgs e)
     {
+        if (TryChartMoved(e)) return;
         if (Session is null || _gesture == Gesture.None) return;
         var p = e.GetCurrentPoint(_canvas).Position;
         if (_gesture is Gesture.ColumnSize or Gesture.RowSize)
@@ -182,6 +200,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     }
     private void Released(object sender, PointerRoutedEventArgs e)
     {
+        if (TryChartReleased(e)) return;
         if (Session is null) return;
         var gesture = _gesture; _gesture = Gesture.None;
         if (gesture == Gesture.ColumnSize) Run(() => Session.SetColumnWidth(_resizeIndex, _resizeValue));
@@ -191,6 +210,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     }
     private void CancelGesture()
     {
+        CancelChartGesture();
         var restore = _gesture == Gesture.Fill; _gesture = Gesture.None; _canvas.ReleasePointerCaptures();
         if (restore && Session is not null) Session.Select(_source); _canvas.Invalidate();
     }
@@ -206,6 +226,11 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     public void BeginEdit(string? initial = null)
     {
         if (Session is null || !CommitEdit()) return;
+        if (Session.PivotAt(Session.ActiveCell) is not null)
+        {
+            Error?.Invoke("You cannot edit a PivotTable result. Change its source or field layout.");
+            return;
+        }
         if (Session.IsSpillFollower)
         {
             Error?.Invoke("You cannot change part of a spilled array. Edit " + Session.Calculation.GetSpill(Session.Sheet, Session.ActiveCell)!.Anchor + " instead.");
@@ -240,16 +265,23 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     }
     public bool CommitEdit()
     {
+        if (!CommitChartTitle()) return false;
         if (_editor is null || _endingEdit) return true;
         _endingEdit = true;
         try { Session?.SetInput(_editor.Text, _editAddress); _overlay.Children.Remove(_editor); _editor = null; return true; }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or FormatException) { Error?.Invoke(e.Message); return false; }
         finally { _endingEdit = false; }
     }
-    public void CancelEdit() { _endingEdit = true; if (_editor is not null) _overlay.Children.Remove(_editor); _editor = null; _endingEdit = false; }
+    public void CancelEdit() { CancelChartTitle(); _endingEdit = true; if (_editor is not null) _overlay.Children.Remove(_editor); _editor = null; _endingEdit = false; }
     public async Task CopyAsync(bool cut = false)
     {
         if (Session is null || !CommitEdit()) return;
+        if (SelectedChartId is { } chartId)
+        {
+            var drawing = new DataPackage(); drawing.SetText(Session.CopyChart(chartId)); Clipboard.SetContent(drawing);
+            if (cut) { Session.DeleteChart(chartId); SelectChart(null); }
+            return;
+        }
         var copied = Session.Copy(); var data = new DataPackage(); data.SetText(copied.Text); Clipboard.SetContent(data);
         if (cut) Session.Clear();
     }
@@ -258,12 +290,18 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
         if (Session is null || !CommitEdit()) return;
         var clipboard = Clipboard.GetContent();
         var text = clipboard.Contains(StandardDataFormats.Text) ? await clipboard.GetTextAsync() : Session.Clipboard?.Text;
-        if (text is not null) Session.Paste(text, valuesOnly);
+        if (!valuesOnly && text?.StartsWith(SpreadsheetSession.ChartClipboardPrefix, StringComparison.Ordinal) == true)
+        {
+            SelectChart(Session.PasteChart(text)); DispatcherQueue.TryEnqueue(RevealChart);
+        }
+        else if (text is not null) Session.Paste(text, valuesOnly);
     }
     private static bool Down(VirtualKey key) => (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
     private void HandleKey(object sender, KeyRoutedEventArgs e)
     {
         if (Session is null || IsEditing || e.OriginalSource is TextBox) return;
+        try { if (HandleChartKey(e)) return; }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException) { Error?.Invoke(error.Message); e.Handled = true; return; }
         var control = Down(VirtualKey.Control) || Down(VirtualKey.LeftWindows) || Down(VirtualKey.RightWindows);
         var shift = Down(VirtualKey.Shift);
         if (control)

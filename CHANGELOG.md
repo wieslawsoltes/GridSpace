@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0-alpha.1 — local preview
+
+Multi-series editable charts, reusable chart geometry/rendering and inspector controls, typed worksheet-source PivotTables, field lists, immutable source caches, refresh/drill-through, linked charts and standard chart/pivot XLSX parts. Drawing deltas retain calculation/layout caches; repeated PivotChart binding is allocation-free. Adds structural/clipboard/ownership/schema/raster regressions, an analytics sample and benchmark, and physical-input acceptance specifications. Full Uno SDK/browser runtime validation and upstream delivery remain pending for this preview. See [charts and PivotTables](docs/charts-pivots.md).
+
+
 ## 0.3.0-alpha.1
 
 Dynamic array expressions, twelve array functions, lexical LET, virtual spill ownership, # references, blocked/cyclic output detection and protected spill followers. Standard dynamic-array XLSX metadata and cached results roundtrip through the supported formula subset.

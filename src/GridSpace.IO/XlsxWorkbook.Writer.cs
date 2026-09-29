@@ -24,6 +24,8 @@ public static partial class XlsxWorkbook
             WritePart(zip, "_rels/.rels", new(P + "Relationships", Relationship("rId1", "officeDocument", "xl/workbook.xml")));
             var workbook = E("workbook", new XAttribute(XNamespace.Xmlns + "r", R), E("bookViews", E("workbookView", new XAttribute("activeTab", book.ActiveSheetIndex))), E("sheets"));
             var rels = new XElement(P + "Relationships");
+            var pivotCaches = E("pivotCaches");
+            var nextPivotCache = 0;
             for (var index = 0; index < book.Sheets.Count; index++)
             {
                 var sheet = book.Sheets[index]; var n = index + 1;
@@ -76,12 +78,16 @@ public static partial class XlsxWorkbook
                 if (sheet.Merges.Count > 0) root.Add(E("mergeCells", new XAttribute("count", sheet.Merges.Count), sheet.Merges.Select(m => E("mergeCell", new XAttribute("ref", m)))));
                 WriteConditionalFormats(sheet, root, differentials);
                 if (sheet.ValidationLists.Count > 0) root.Add(E("dataValidations", new XAttribute("count", sheet.ValidationLists.Count), sheet.ValidationLists.Select(p => E("dataValidation", new XAttribute("type", "list"), new XAttribute("allowBlank", 1), new XAttribute("showErrorMessage", 1), new XAttribute("sqref", p.Key), E("formula1", "\"" + string.Join(',', p.Value) + "\"")))));
-                WriteCharts(zip, sheet, n, root, engine, Type);
+                var sheetRelationships = new XElement(P + "Relationships");
+                WriteCharts(zip, book, sheet, n, root, sheetRelationships, engine, Type);
+                WritePivots(zip, sheet, n, root, sheetRelationships, pivotCaches, rels, Type, ref nextPivotCache);
+                if (sheetRelationships.HasElements) WritePart(zip, "xl/worksheets/_rels/sheet" + n + ".xml.rels", sheetRelationships);
                 WriteDataToolExtension(sheet, root);
                 WritePart(zip, "xl/worksheets/sheet" + n + ".xml", root);
             }
             if (book.Names.Count > 0) workbook.Add(E("definedNames", book.Names.Select(p => E("definedName", new XAttribute("name", p.Key), p.Value.TrimStart('=')))));
             workbook.Add(E("calcPr", new XAttribute("calcId", 191029), new XAttribute("fullCalcOnLoad", 1), new XAttribute("forceFullCalc", 1)));
+            if (pivotCaches.HasElements) workbook.Add(pivotCaches);
             if (hasDynamicArrays)
             {
                 Type("xl/metadata.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml");

@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "runtime": ".NET 10.0.12",
+  "os": "Debian GNU/Linux 13 (trixie)",
+  "rows": 10000,
+  "storedSourceCells": 40004,
+  "chartDataResolutions": 2,
+  "observations": [
+    {
+      "name": "pivot-capture-and-aggregate",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 23.9375,
+      "medianAllocatedBytes": 9788024
+    },
+    {
+      "name": "pivot-aggregate-captured-values",
+      "samples": 20,
+      "operationsPerSample": 1,
+      "medianMs": 7.8624,
+      "medianAllocatedBytes": 8003736
+    },
+    {
+      "name": "cached-pivot-chart-binding",
+      "samples": 20,
+      "operationsPerSample": 100,
+      "medianMs": 0.00013299999999999998,
+      "medianAllocatedBytes": 0
+    },
+    {
+      "name": "chart-update-and-cached-data",
+      "samples": 20,
+      "operationsPerSample": 20,
+      "medianMs": 0.006645,
+      "medianAllocatedBytes": 2304
+    },
+    {
+      "name": "xlsx-chart-and-pivot-cache-export",
+      "samples": 5,
+      "operationsPerSample": 1,
+      "medianMs": 374.0197,
+      "medianAllocatedBytes": 88854752
+    }
+  ]
+}

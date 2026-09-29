@@ -4,6 +4,12 @@
 <p align="center"><a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml/badge.svg" alt="Build and browser validation" /></a> <a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml/badge.svg" alt="Desktop builds" /></a> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" /> <a href="https://www.nuget.org/packages/GridSpace.Core"><img src="https://img.shields.io/nuget/vpre/GridSpace.Core.svg?label=NuGet" alt="NuGet" /></a> <a href="https://www.nuget.org/packages/GridSpace.Core"><img src="https://img.shields.io/nuget/dt/GridSpace.Core.svg" alt="Downloads" /></a></p>
 <p align="center"><a href="https://wieslawsoltes.github.io/GridSpace/">Open browser app</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/compatibility.md">Compatibility</a> · <a href="docs/parity-data-tools.md">Data tools</a> · <a href="docs/development.md">Development</a></p>
 
+## 0.4 preview: editable charts and PivotTables
+
+The working source adds nine multi-series chart families, on-canvas move/resize/inline title editing, chart inspectors and clipboard operations, and refreshable worksheet-source PivotTables with field lists, filters, multiple measures, weighted totals and cached drill-through. Linked charts follow report refreshes. The XLSX writer emits chart parts, PivotTable definitions and typed source caches rather than only exporting flattened values.
+
+See [the implementation and compatibility guide](docs/charts-pivots.md) for APIs, safeguards, limits and performance measurements. **This preview is not a claim that 0.4 packages are published or that the live site has changed.** Local engine/raster/Open XML tests and Uno API compilation are completed; full Uno SDK and physical-input runtime checks remain pending. Existing public release and NuGet links below describe the published packages, not this unshipped preview.
+
 ## New in 0.3
 
 Dynamic arrays now spill through the real worksheet: `SEQUENCE`, `FILTER`, `SORT`, `SORTBY`, `UNIQUE`, `TRANSPOSE`, `TAKE`, `DROP`, `HSTACK`, `VSTACK`, `CHOOSECOLS`, `CHOOSEROWS`, array constants, broadcasting, `LET`, and `A1#` references. Spilled followers are protected and display their anchor formula. Supported dynamic arrays export standard XLSX metadata and calculated caches.

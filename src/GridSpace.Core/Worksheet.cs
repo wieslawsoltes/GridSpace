@@ -19,6 +19,7 @@ public sealed partial class Worksheet
     public bool SortCaseSensitive { get; set; }
     public List<CellRange> Merges { get; set; } = [];
     public List<ChartSpec> Charts { get; set; } = [];
+    public List<PivotTableSpec> PivotTables { get; set; } = [];
     public Dictionary<string, string[]> ValidationLists { get; set; } = [];
     public int FrozenRows { get; set; }
     public int FrozenColumns { get; set; }
