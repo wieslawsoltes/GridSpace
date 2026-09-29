@@ -44,6 +44,9 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
                 Session.Select(range);
             }
             else Session.Select(address);
+            // The Name box targets cells, not the selected floating drawing. Transfer
+            // editing ownership before reveal so F2 and navigation reach the cell.
+            Surface.SelectChart(null);
             Surface.RevealSelection();
         });
         _formula.FocusGridRequested += Surface.FocusGrid; _formula.FunctionRequested += () => RunCommand("function");

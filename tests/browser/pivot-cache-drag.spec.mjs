@@ -16,14 +16,6 @@ async function select(page, range) {
   await page.keyboard.type(range); await page.keyboard.press('Enter');
   await expect.poll(async () => (await state(page)).selection).toBe(range);
 }
-async function choose(page, id, index) {
-  await click(page, id);
-  await expect.poll(async () => (await state(page)).controls[id]?.expanded).toBe(true);
-  await page.keyboard.press('Home');
-  for (let i = 0; i < index; i++) await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
-  await expect.poll(async () => (await state(page)).controls[id]?.selectedIndex).toBe(index);
-}
 async function snapshot(page, name) {
   await fs.mkdir('artifacts/screenshots', { recursive: true });
   await page.screenshot({ path: `artifacts/screenshots/${name}.png`, fullPage: true });
@@ -119,4 +111,17 @@ test('moves PivotTable fields between areas using actual pointer drag and drop',
   await page.mouse.move(800, 400, { steps: 12 }); await page.mouse.up();
   expect((await state(page)).pivots[0].rows).toBe(2);
   expect((await state(page)).pivots[0].columns).toBe(1);
+});
+
+test('name-box navigation leaves chart editing and reveals the requested cell', async ({ page }) => {
+  const id = await insertChart(page);
+  await select(page, 'A10000');
+  await expect.poll(async () => (await state(page)).selectedChart).toBeNull();
+  await expect.poll(async () => (await state(page)).scrollY).toBeGreaterThan(100000);
+  await page.keyboard.press('F2');
+  await page.keyboard.press('Control+A'); await page.keyboard.type('42'); await page.keyboard.press('Enter');
+  await select(page, 'A10000');
+  expect((await state(page)).value).toBe('42');
+  expect((await state(page)).charts.some(c => c.id === id)).toBe(true);
+  expect((await state(page)).charts.find(c => c.id === id).title).not.toBe('42');
 });

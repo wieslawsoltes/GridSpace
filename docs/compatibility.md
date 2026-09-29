@@ -1,6 +1,6 @@
 # Compatibility and parity ledger
 
-This ledger describes the implemented 0.4.0 preview, not complete Excel fidelity. Keep original XLSX files. Native `.gridspace` is authoritative for features modeled by GridSpace.
+This ledger describes the implemented 0.4.0 alpha, not complete Excel fidelity. Keep original XLSX files. Native `.gridspace` is authoritative for features modeled by GridSpace.
 
 ## Workbook and UI
 
@@ -25,8 +25,8 @@ This ledger describes the implemented 0.4.0 preview, not complete Excel fidelity
 | Notes | Per-cell plain text, not threaded collaboration comments |
 | Dynamic arrays | Twelve array functions, LET, constants, broadcasting and # references; 100,000 cells per array and 200,000 derived cells per workbook; not every function lifts over arrays |
 | Charts | Nine multi-series families, explicit bindings, stacking, secondary combo axes, appearance/geometry editing and drawing deltas; no 3D/specialized/all-axis parity |
-| WYSIWYG chart editing | Selection, eight resize handles, drag preview/commit/cancel, inline title, keyboard nudge, duplicate, clipboard and z-order; runtime acceptance pending for this preview |
-| PivotTables | Local worksheet source, typed multi-dimension/multi-measure aggregation, filters, weighted totals, cached refresh/drill-through and protected output; flattened layout, no grouping/subtotals/OLAP |
+| WYSIWYG chart editing | Selection, eight resize handles, drag preview/commit/cancel, inline title, keyboard nudge, duplicate, clipboard and z-order; physical-input acceptance covers supported chart gestures and selection handoff |
+| PivotTables | Local worksheet source, typed multi-dimension/multi-measure aggregation, filters, weighted totals, cache-preserving field/layout edits, explicit refresh, cached drill-through and protected output; flattened layout, no grouping/subtotals/OLAP |
 | Linked PivotCharts | Refresh-following chart over report cells; full Excel PivotChart field-button/file-format parity is not implemented |
 | Ribbon/dialogs | Custom Office-style shell and reusable compound editors; not pixel-identical Excel or every control recreated from first principles |
 | Accessibility | Named commands and active-cell description; no complete virtualized grid automation provider |
@@ -70,6 +70,6 @@ Rendering a far-away cell does not allocate the intervening grid. This does not 
 
 VBA/Office Scripts; advanced PivotTable/PivotChart variants; Power Query/data models; add-ins; external-data refresh; collaboration/cloud storage; full print/page setup; complete dynamic-array/lambda/function semantics; all chart/format/filter types; complete accessibility; encryption/signing; arbitrary OOXML preservation; exact Excel keyboard, visual and interaction parity.
 
-## Charts and PivotTable preview
+## Charts and PivotTables
 
-See [charts and PivotTables](charts-pivots.md) for the supported model, editing, cache, chart and OOXML behavior. Standard chart parts, PivotTable definitions and source caches are emitted; this is not lossless arbitrary workbook editing. Source limits remain explicit. This preview has local engine/API validation but no claimed new Uno SDK or browser-runtime validation in the delivery environment.
+See [charts and PivotTables](charts-pivots.md) for the supported model, editing, cache, chart and OOXML behavior. Standard chart parts, PivotTable definitions and source caches are emitted; this is not lossless arbitrary workbook editing. Source limits remain explicit. CI builds the full Uno WebAssembly/native hosts and runs physical-input acceptance, including field dragging/cancellation and report-refresh consistency. Schema validity and browser tests do not establish full Microsoft Excel interoperability.

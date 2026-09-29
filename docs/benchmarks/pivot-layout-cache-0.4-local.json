@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "runtime": ".NET 10.0.12",
+  "os": "Debian GNU/Linux 13 (trixie)",
+  "rows": 10000,
+  "storedSourceCells": 40004,
+  "chartDataResolutions": 2,
+  "observations": [
+    {
+      "name": "pivot-capture-and-aggregate",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 47.1335,
+      "medianAllocatedBytes": 9787136
+    },
+    {
+      "name": "pivot-aggregate-captured-values",
+      "samples": 20,
+      "operationsPerSample": 1,
+      "medianMs": 5.4542,
+      "medianAllocatedBytes": 8002848
+    },
+    {
+      "name": "pivot-layout-with-source-refresh",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 37.6085,
+      "medianAllocatedBytes": 14917272
+    },
+    {
+      "name": "pivot-layout-from-immutable-cache",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 18.8212,
+      "medianAllocatedBytes": 13650400
+    },
+    {
+      "name": "cached-pivot-filter-catalog",
+      "samples": 20,
+      "operationsPerSample": 100,
+      "medianMs": 8.7E-05,
+      "medianAllocatedBytes": 0
+    },
+    {
+      "name": "cached-pivot-chart-binding",
+      "samples": 20,
+      "operationsPerSample": 100,
+      "medianMs": 0.000211,
+      "medianAllocatedBytes": 0
+    },
+    {
+      "name": "chart-update-and-cached-data",
+      "samples": 20,
+      "operationsPerSample": 20,
+      "medianMs": 0.006685000000000001,
+      "medianAllocatedBytes": 2304
+    },
+    {
+      "name": "xlsx-chart-and-pivot-cache-export",
+      "samples": 5,
+      "operationsPerSample": 1,
+      "medianMs": 327.0676,
+      "medianAllocatedBytes": 88133344
+    }
+  ]
+}

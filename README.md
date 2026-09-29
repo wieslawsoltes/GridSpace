@@ -4,11 +4,13 @@
 <p align="center"><a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/build.yml/badge.svg" alt="Build and browser validation" /></a> <a href="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml"><img src="https://github.com/wieslawsoltes/GridSpace/actions/workflows/desktop.yml/badge.svg" alt="Desktop builds" /></a> <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" /> <a href="https://www.nuget.org/packages/GridSpace.Core"><img src="https://img.shields.io/nuget/vpre/GridSpace.Core.svg?label=NuGet" alt="NuGet" /></a> <a href="https://www.nuget.org/packages/GridSpace.Core"><img src="https://img.shields.io/nuget/dt/GridSpace.Core.svg" alt="Downloads" /></a></p>
 <p align="center"><a href="https://wieslawsoltes.github.io/GridSpace/">Open browser app</a> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/compatibility.md">Compatibility</a> · <a href="docs/parity-data-tools.md">Data tools</a> · <a href="docs/development.md">Development</a></p>
 
-## 0.4 preview: editable charts and PivotTables
+## New in 0.4: editable charts and PivotTables
 
-The working source adds nine multi-series chart families, on-canvas move/resize/inline title editing, chart inspectors and clipboard operations, and refreshable worksheet-source PivotTables with field lists, filters, multiple measures, weighted totals and cached drill-through. Linked charts follow report refreshes. The XLSX writer emits chart parts, PivotTable definitions and typed source caches rather than only exporting flattened values.
+GridSpace adds nine multi-series chart families, on-canvas move/resize/inline title editing, chart inspectors and clipboard operations, and refreshable worksheet-source PivotTables with field lists, filters, multiple measures, weighted totals and cached drill-through. Linked charts follow report refreshes. The XLSX writer emits chart parts, PivotTable definitions and typed source caches rather than only exporting flattened values.
 
-See [the implementation and compatibility guide](docs/charts-pivots.md) for APIs, safeguards, limits and performance measurements. **This preview is not a claim that 0.4 packages are published or that the live site has changed.** Local engine/raster/Open XML tests and Uno API compilation are completed; full Uno SDK and physical-input runtime checks remain pending. Existing public release and NuGet links below describe the published packages, not this unshipped preview.
+PivotTable field, filter, measure and layout edits reuse the immutable last-refresh source cache; Refresh explicitly reads current worksheet values. Field dragging owns its pointer gesture, with target highlighting and cancellation, rather than depending on browser-native data transfer. Drawing-to-cell navigation transfers editing ownership back to the grid.
+
+See [the implementation and compatibility guide](docs/charts-pivots.md) for APIs, safeguards, limits, browser interaction coverage and paired performance measurements. Full Uno WebAssembly and native builds, physical-input acceptance, package generation and deployment checks run in CI. **A successful main build deploys Pages; publishing this version to NuGet or creating desktop release assets remains a separate tagged-release operation.**
 
 ## New in 0.3
 
@@ -37,7 +39,8 @@ This remains a **functional alpha**, not a complete or pixel-identical Microsoft
 | Navigation | Sparse viewport rendering through XFD1048576, frozen panes, hidden-row/column geometry, wheel scrolling, zoom, touch panning and keyboard shortcuts |
 | Calculations | Arithmetic/comparison expressions, relative/absolute/mixed references, cross-sheet references, names, revision-based caching, bounded evaluation and common functions |
 | Worksheet tools | Find/replace, list validation, plain notes, styled table ranges, worksheet insertion/copy/rename/delete, manual hide/unhide |
-| Charts | Single-series column, bar, line and pie charts with bounded previews and XLSX chart interchange |
+| Charts | Nine multi-series families, explicit bindings, stacking/secondary combo axes, eight-handle WYSIWYG geometry, inline titles, inspector, clipboard and chart XLSX parts |
+| PivotTables | Typed multidimensional grouping, multiple measures, filters, cache-preserving layout edits, explicit refresh, protected reports, cached drill-through and linked charts |
 | Files | Native `.gridspace` JSON, CSV/TSV and a documented XLSX subset; explicit browser downloads/file selection and native desktop pickers |
 | Recovery | Debounced IndexedDB recovery in the browser; atomic local recovery-file replacement on desktop |
 
@@ -413,13 +416,13 @@ npm run test:browser
 
 Tests cover formulas, reference rewriting, rollback/history, native/XLSX interchange, conditional/filter/sort engines, structural metadata, sparse/frozen geometry and actual raster pixels. Independent **Open XML SDK schema validation** supplements the reader/writer round-trip tests; that dependency is test-only.
 
-Browser acceptance uses physical keyboard and pointer events. A `?test=1` read-only snapshot provides model state and current control bounds, not mutation hooks. Tests exercise both the original editing flows and the new rule editor/manager, filter popup, custom-sort editor and structural deletion; screenshots and traces are retained in CI artifacts.
+Browser acceptance uses physical keyboard and pointer events. A `?test=1` read-only snapshot provides model state and current control bounds, not mutation hooks. Tests exercise both the original editing flows and the new rule editor/manager, filter popup, custom-sort editor and structural deletion, chart manipulation/title/inspector editing, PivotTable creation/drill-through, field dragging/cancellation, cached refresh epochs and chart-to-cell navigation; screenshots and traces are retained in CI artifacts.
 
 **Build** tests and publishes the actual Uno WebAssembly application, packs libraries, then deploys a successful main-branch build to Pages. The artifact's `build-info.json` commit is verified, and the browser suite runs again against the public URL. **Desktop** builds the shared native host on Linux, Windows and macOS. **Release** runs for `v*` tags or a supplied manual version. It reruns tests and browser acceptance, publishes self-contained single-file desktop executables for Windows, macOS and Linux (x64 and arm64), and creates versioned source/browser archives, packages with symbols and checksums. Tags attach all assets to a GitHub release/prerelease and publish the packages to NuGet.org with Trusted Publishing from the protected `nuget` environment. Manual runs are dry runs: they build and upload every asset as workflow artifacts but publish nothing.
 
 ## Important boundaries
 
-VBA, PivotTables, Power Query, external-data refresh, multiplayer editing, Excel add-ins, complete array/LAMBDA semantics, lossless arbitrary OOXML preservation, full print/page layout and complete virtualized-cell accessibility remain unimplemented. The custom workbench still uses Uno input/dialog primitives. Conditional-format clipboard propagation, arbitrary cell-shift deletion and advanced filter/chart variants also remain outside this increment.
+VBA, advanced PivotTable grouping/subtotals/OLAP, Power Query, external-data refresh, multiplayer editing, Excel add-ins, complete array/LAMBDA semantics, lossless arbitrary OOXML preservation, full print/page layout and complete virtualized-cell accessibility remain unimplemented. The custom workbench still uses Uno input/dialog primitives. Conditional-format clipboard propagation, arbitrary cell-shift deletion and advanced filter/chart variants also remain outside this increment.
 
 The alpha bounds expensive work: 100,000 cells per bulk edit, conditional range or sort; 100,000 filter data rows; 200,000 stored cells per imported sheet; 256 sheets; and 32 MB native/file import. See [compatibility](docs/compatibility.md) for exact subset behavior and limitations.
 

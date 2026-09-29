@@ -1,10 +1,12 @@
-# Charts, WYSIWYG editing and PivotTables — 0.4 preview
+# Charts, WYSIWYG editing and PivotTables — 0.4.0-alpha.1
 
 ## Drawing interaction
 
 Click a chart to select it and open **Format Chart**. Drag its body to move it; drag any of the eight handles to resize it. Hold Shift while resizing to preserve the original aspect ratio. Geometry stays in worksheet units, so input and rendering agree at different zoom factors and through frozen panes. Pointer movement changes a preview only; release creates one history entry. Escape or lost/cancelled pointer capture discards the preview.
 
 Double-click the title or press F2 to edit it in place. Enter commits and Escape cancels. Arrow keys nudge a selected chart by one worksheet unit; Shift+arrows use ten. Delete removes it. Ctrl+D duplicates it; Ctrl+C/X/V copies, cuts or pastes a portable drawing definition, retaining its original data-sheet binding. Chart cut currently removes the original after successful clipboard assignment, rather than using Excel's deferred move mode. Undo restores it.
+
+Using the Name box to navigate to a cell exits drawing selection, closes its inspector and reveals the requested cell. Subsequent F2 and keyboard editing target the cell rather than the previous chart.
 
 The contextual **Chart Design** tab exposes title editing, duplication, deletion, series orientation, labels, legend, and z-order. The inspector edits the title, chart type, grouping, legend, source worksheet and range, category vector, header/hidden-data options, series names/ranges/colors/visibility/order, axes, limits, value format, gap, doughnut hole, dimensions, and colors. Combo series can choose column/line/area and the secondary value axis.
 
@@ -24,11 +26,17 @@ Categorical charts render at most 512 categories with an explicit on-chart notic
 
 Select a rectangular source with unique, non-empty column headers and choose **Insert → PivotTable**. The workbench creates a report on a new worksheet. Select report cells for **PivotTable Fields**. Drag a source field into Rows, Columns, Values or Filters, or select the target area and use the keyboard-accessible Add buttons. Reorder/remove dimensions and measures through the field controls.
 
+Field dragging uses the reusable `OfficeDragButton`: a six-DIP movement threshold separates clicks from drags, the current area is highlighted, and edge scrolling makes lower areas reachable. Release commits only over a visible area inside the inspector. Escape, lost capture, unloading, and an outside drop cancel without moving a field. Ordinary button clicks, keyboard activation and automation semantics remain available. Browser acceptance uses real pointer movement, not a direct call to the assignment method.
+
 Each measure chooses **Sum, Count, Count Numbers, Average, Minimum, Maximum, Product, sample/population standard deviation, or sample/population variance**. It also supports normal values and percentages of the row, column, or grand total; captions and number formats are editable. Multiple measures and multiple row/column dimensions are supported. Case-insensitive textual groups remain distinct from numeric groups: numeric `1` and textual `"1"` do not collapse together.
 
 Aggregation uses typed hash keys, compensated sums and Welford statistics. Grand totals are calculated from source accumulators, not by averaging already aggregated averages. Report filters are applied before accumulation. The implemented layout is a flattened tabular header with repeated row labels, not Excel's complete compact/outline/subtotal hierarchy.
 
 Refresh is explicit. Source edits do not silently rebuild reports or change their detail records. Each report stores immutable, typed source values from the last refresh. Double-click a numeric report cell, or use **Show Details**, to create a worksheet containing contributing records from that same snapshot. Filtered-out source records remain in the cache so a subsequent filter change can use the full captured source. A live refresh captures the current source again.
+
+`ReconfigurePivotTable` rebuilds field, filter, measure and layout changes from the **existing immutable last-refresh cache**. It never accepts a caller-supplied replacement cache. Changing the source sheet, source range or hidden-row capture policy explicitly recaptures source data. Missing caches and imported layouts requiring conversion must be refreshed before cached editing. `SetPivotTable` and `RefreshPivotTable` retain their explicit live-capture behavior. Both refresh and reconfiguration validate the entire replacement before applying output/metadata deltas; undo/redo restores the corresponding snapshot and report together.
+
+`PivotFieldValues.Get(cache, field)` supplies read-only, case-insensitive filter catalogs from that same cache. Weak snapshot ownership lets old catalogs be collected when workbooks/history release them; each snapshot retains at most 16 field catalogs. More than 10,000 distinct labels fails explicitly rather than silently truncating the checklist. The inspector keeps only metadata in its edit draft, avoiding a full cache validation on every caption or formatting interaction.
 
 Report values are owned output. Partial input edits, sorts, merges, pastes or structural edits through the report are rejected. Styling remains available, although refresh reapplies its header, stripe, totals and measure-number styles. A refresh fully computes and checks replacement output before clearing or writing cells. Expansion cannot overwrite occupied cells, another report, merged cells, spilled arrays or any PivotTable source range. Undo/redo records output deltas and immutable cache/definition snapshots instead of serializing unrelated worksheets.
 
@@ -81,6 +89,10 @@ var pivot = new PivotTableSpec
 };
 session.SetPivotTable(pivot);
 session.AddPivotChart(pivot.Id);
+// Layout changes use the source snapshot captured above.
+session.ReconfigurePivotTable(session.Sheet.PivotTables.Single(p => p.Id == pivot.Id)
+    with { SortAscending = false });
+// Explicit refresh acquires current worksheet values.
 session.RefreshPivotTable(pivot.Id);
 ```
 
@@ -100,8 +112,7 @@ npm run test:browser
 
 The benchmark uses 10,000 fact rows, 50 row groups, 10 column groups and two measures. It separately records capture/aggregation, aggregation of a captured source, cached binding, drawing edits and XLSX export. Timings are workload-specific CPU observations; they are not GPU frame times or a universal performance claim. CI records them without machine-dependent timing gates. Deterministic tests verify object identity, evaluation counts, allocation-free cached PivotChart lookups and bounded delta history.
 
-This preview was validated locally with the engine/raster/Open XML tests and C# API compilation of the Controls/Workbench sources against the published Uno assemblies. Normal Uno SDK browser/native builds, physical-input browser acceptance, and Excel application interoperability remain pending in this delivery environment. The browser runner was blocked by an administrator policy; no browser test pass is claimed. Four physical-input acceptance tests are committed to the source for the normal CI build.
-
+The regression suites cover supported chart/PivotTable engines, rendering and OOXML, as well as the complete Uno SDK browser/native build. Browser tests send actual keyboard and pointer events for chart movement/resizing/cancellation, inline titles, inspector changes, PivotTable field assignment/drill-through, field dragging/undo/cancellation, cached-layout consistency until Refresh, and drawing-to-cell navigation. Read-only diagnostics supply geometry and observable model state, not mutation hooks. Public-site CI reruns the suite only after checking the deployed commit marker. Tests do not run Microsoft Excel or establish complete interoperability. Edge scrolling and all touch/assistive-technology combinations still need broader device testing.
 
 ### Recorded local observations
 
@@ -116,6 +127,18 @@ One standalone .NET 10.0.12 / Debian x64 run, 10,000 rows (40,004 stored source 
 | `xlsx-chart-and-pivot-cache-export` | 374.019700 ms | 88,854,752 |
 
 The cached-binding time is near the measurement floor; the useful invariant is zero allocation and no source recomputation. The two data resolutions in the complete harness correspond to the two distinct charts. Raw observations are in `docs/benchmarks/charts-pivots-0.4-local.json`. Export still builds bounded XML trees and has substantial allocation; it is not advertised as streaming or constant-memory.
+
+### Paired layout-cache comparison
+
+A later paired run on the same .NET 10.0.12 / Debian x64 process and the same 10,000-row model measures the two layout paths directly, with 12 samples per path:
+
+| Layout operation | Median | Allocated bytes per operation |
+| --- | ---: | ---: |
+| Recapture live source and rebuild | 37.6085 ms | 14,917,272 |
+| Rebuild from immutable report cache | 18.8212 ms | 13,650,400 |
+| Repeated cached field-value lookup | Near measurement floor | 0 |
+
+This comparison isolates cache reuse; it is not a comparison of browser frames or different machines. Layout still constructs a replacement report and output deltas, so it is not allocation-free. Source-capture policy changes deliberately pay the full refresh cost. Raw observations, including the remaining scenarios, are in `docs/benchmarks/pivot-layout-cache-0.4-local.json`. CI records independent measurements without brittle timing gates.
 
 ## Sources
 
