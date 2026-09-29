@@ -4,12 +4,13 @@ using Windows.ApplicationModel.DataTransfer;
 namespace GridSpace.Controls;
 
 /// <summary>Reusable PivotTable field list with live row/column/value/filter areas, drag/drop and keyboard-accessible commands.</summary>
-public sealed class PivotFieldListControl : UserControl
+public sealed partial class PivotFieldListControl : UserControl
 {
     private readonly StackPanel _root = new() { Spacing = 10, Padding = new Thickness(12) };
     private PivotTableSpec _document = new();
     private string[] _fields = [];
     private bool _loading;
+    private bool _requiresRefresh;
     public Func<PivotTableSpec, bool>? CommitChanges { get; set; }
     public Func<int, IReadOnlyList<string>>? GetFieldValues { get; set; }
     public event Action? RefreshRequested;
@@ -19,14 +20,23 @@ public sealed class PivotFieldListControl : UserControl
 
     public PivotFieldListControl()
     {
-        Content = new ScrollViewer { Content = _root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        _scroll = new ScrollViewer { Content = _root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Content = _scroll;
+        _dragScrollTimer.Tick += (_, _) => ScrollFieldDrag();
+        Unloaded += (_, _) => ClearFieldDrag();
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         AutomationProperties.SetAutomationId(this, "PivotFieldList");
     }
 
     public void Bind(PivotTableSpec document)
     {
-        _document = document.CloneDocument(); _fields = document.FieldNames.ToArray(); Build();
+        // The host owns source snapshots. Keeping them out of the edit draft prevents a
+        // complete cache validation on every caption, format or field-area interaction.
+        ArgumentNullException.ThrowIfNull(document);
+        _requiresRefresh = document.NeedsLayoutRefresh || document.Cache is null && document.OutputRange is not null;
+        _document = (document with { Cache = null }).CloneDocument();
+        _fields = document.FieldNames.ToArray();
+        Build();
     }
 
     private void Build()
@@ -34,7 +44,7 @@ public sealed class PivotFieldListControl : UserControl
         _loading = true;
         try
         {
-            _root.Children.Clear();
+            ClearFieldDrag(); _dropAreas.Clear(); _root.Children.Clear();
             var header = new Grid(); header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.Children.Add(OfficeTheme.Label("PivotTable Fields", 18));
             var close = new OfficeButton("×", () => CloseRequested?.Invoke()) { Width = 28, FontSize = 18 };
@@ -47,6 +57,13 @@ public sealed class PivotFieldListControl : UserControl
             commands.Children.Add(Button("Pivot Refresh", "Refresh", () => RefreshRequested?.Invoke()));
             commands.Children.Add(Button("Pivot Chart", "PivotChart", () => ChartRequested?.Invoke()));
             _root.Children.Add(commands);
+            if (_requiresRefresh)
+            {
+                var message = OfficeTheme.Label("Refresh this report before changing fields or filters. Its imported layout or source cache needs conversion.", 12, "#666666");
+                message.TextWrapping = TextWrapping.Wrap;
+                _root.Children.Add(message);
+                return;
+            }
 
             var addArea = OfficeForm.Choice("Pivot add area", new[] { "Rows", "Columns", "Values", "Filters" }.Select(s => new OfficeChoice<string>(s, s)), "Rows");
             _root.Children.Add(OfficeForm.Field("Add selected field to", addArea));
@@ -57,9 +74,17 @@ public sealed class PivotFieldListControl : UserControl
             for (var i = 0; i < _fields.Length; i++)
             {
                 var field = i;
-                var button = Button("Pivot field " + i, "+  " + _fields[i], () => Assign(field, OfficeForm.Value<string>(addArea)));
-                button.HorizontalContentAlignment = HorizontalAlignment.Left; button.CanDrag = true;
-                button.DragStarting += (_, e) => { e.Data.SetText("GridSpace.PivotField:" + field); };
+                var button = new OfficeDragButton
+                {
+                    Content = "+  " + _fields[i], HorizontalContentAlignment = HorizontalAlignment.Left,
+                    DragCoordinateRoot = this
+                };
+                AutomationProperties.SetAutomationId(button, "Pivotfield" + i);
+                AutomationProperties.SetName(button, _fields[i]);
+                button.Click += (_, _) => Assign(field, OfficeForm.Value<string>(addArea));
+                button.DragPreview += point => PreviewFieldDrag(point);
+                button.DragCommitted += point => CommitFieldDrag(field, point);
+                button.DragCancelled += ClearFieldDrag;
                 catalog.Children.Add(button); fieldButtons.Add((_fields[i], button));
             }
             search.TextChanged += (_, _) =>
@@ -89,6 +114,7 @@ public sealed class PivotFieldListControl : UserControl
             Background = OfficeTheme.Brush("#FAFAFA"), Padding = new Thickness(8), MinHeight = 55, Child = panel, AllowDrop = true
         };
         AutomationProperties.SetAutomationId(border, "PivotArea" + name);
+        _dropAreas.Add(name, border);
         panel.Children.Add(OfficeTheme.Label(name, 13, "#107C41"));
         border.DragOver += (_, e) => { if (e.DataView.Contains(StandardDataFormats.Text)) { e.AcceptedOperation = DataPackageOperation.Copy; e.Handled = true; } };
         border.Drop += async (_, e) =>

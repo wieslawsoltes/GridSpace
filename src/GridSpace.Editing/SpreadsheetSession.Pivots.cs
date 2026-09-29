@@ -10,7 +10,25 @@ public sealed partial class SpreadsheetSession
     public PivotTableSpec? ActivePivot => PivotAt(ActiveCell);
 
     /// <summary>Calculates and checks the entire replacement before mutating owned report cells. History is O(output), not O(workbook).</summary>
-    public PivotReport SetPivotTable(PivotTableSpec definition)
+    public PivotReport SetPivotTable(PivotTableSpec definition) => ApplyPivotTable(definition, refreshSource: true);
+
+    /// <summary>
+    /// Rebuilds a report from its immutable last-refresh cache. Source/capture-policy changes
+    /// explicitly acquire a new cache; ordinary field, filter, measure and layout edits do not.
+    /// Caller-supplied caches are never trusted as the source of an existing report.
+    /// </summary>
+    public PivotReport ReconfigurePivotTable(PivotTableSpec definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        var original = Sheet.PivotTables.FirstOrDefault(p => p.Id == definition.Id)
+            ?? throw new InvalidOperationException("Create the PivotTable before changing its layout.");
+        var refresh = !original.SourceSheet.Equals(definition.SourceSheet, StringComparison.OrdinalIgnoreCase)
+            || CellRange.Parse(original.SourceRange).Normalized != CellRange.Parse(definition.SourceRange).Normalized
+            || original.IncludeHiddenRows != definition.IncludeHiddenRows;
+        return ApplyPivotTable(definition, refresh);
+    }
+
+    private PivotReport ApplyPivotTable(PivotTableSpec definition, bool refreshSource)
     {
         // A live refresh captures a replacement cache, not the previous schema's cache.
         ArgumentNullException.ThrowIfNull(definition);
@@ -23,7 +41,14 @@ public sealed partial class SpreadsheetSession
             throw new InvalidOperationException("PivotTable names must be unique within the workbook.");
         if (original is null && Book.Sheets.Where(s => s != Sheet).SelectMany(s => s.PivotTables).Any(p => p.Id == definition.Id))
             throw new InvalidOperationException("PivotTable identifiers must be unique within the workbook.");
-        var source = PivotEngine.Capture(Book, definition, Calculation);
+        PivotCacheSnapshot? cache = null;
+        if (!refreshSource)
+        {
+            if (original is null || original.NeedsLayoutRefresh || original.Cache is null)
+                throw new InvalidOperationException("Refresh this PivotTable before changing its cached layout.");
+            cache = original.Cache;
+        }
+        var source = cache is null ? PivotEngine.Capture(Book, definition, Calculation) : PivotEngine.FromCache(cache);
         var report = PivotEngine.Build(source, definition);
         var anchor = definition.Anchor;
         var output = new CellRange(anchor, new(anchor.Row + report.RowCount - 1, anchor.Column + report.ColumnCount - 1));
@@ -41,7 +66,7 @@ public sealed partial class SpreadsheetSession
         {
             OutputRange = output.ToString(),
             NeedsLayoutRefresh = false,
-            Cache = PivotEngine.ToCache(source),
+            Cache = cache ?? PivotEngine.ToCache(source),
             ChartRange = new CellRange(anchor, new(anchor.Row + report.RowKeys.Count, anchor.Column + report.LabelColumns
                 + report.ColumnKeys.Count * definition.Values.Count - 1)).ToString(),
             FieldNames = report.Source.Headers.ToArray(),
@@ -76,8 +101,9 @@ public sealed partial class SpreadsheetSession
         ReplayPivot(metadata, true);
         if (!_inTransaction)
         {
-            _undo.Add(new("Refresh " + after.Name, "", "", Selection) { Patches = patches, Pivot = metadata, SheetIndex = Book.ActiveSheetIndex });
-            _redo.Clear(); TrimHistory(); IsDirty = true; Notify("Refresh " + after.Name, true);
+            var action = (refreshSource ? "Refresh " : "Layout ") + after.Name;
+            _undo.Add(new(action, "", "", Selection) { Patches = patches, Pivot = metadata, SheetIndex = Book.ActiveSheetIndex });
+            _redo.Clear(); TrimHistory(); IsDirty = true; Notify(action, true);
         }
         return report;
     }

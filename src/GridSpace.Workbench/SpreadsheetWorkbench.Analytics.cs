@@ -74,17 +74,14 @@ public sealed partial class SpreadsheetWorkbench
         _pivotEditor.GetFieldValues = field =>
         {
             var spec = Session.Sheet.PivotTables.First(p => p.Id == _inspectedPivotId);
-            var source = Session.Book.FindSheet(spec.SourceSheet) ?? throw new InvalidOperationException("Source worksheet was not found.");
-            var range = CellRange.Parse(spec.SourceRange);
-            var values = Enumerable.Range(range.Top + 1, range.Bottom - range.Top).Select(r => Session.Calculation.Evaluate(source, new CellAddress(r, range.Left + field)).ToString())
-                .Distinct(StringComparer.OrdinalIgnoreCase).Take(10001).ToArray();
-            if (values.Length > 10000) throw new InvalidOperationException("Pivot filter selection supports at most 10,000 distinct values. Narrow the source range first.");
-            return values;
+            if (spec.Cache is null || spec.NeedsLayoutRefresh)
+                throw new InvalidOperationException("Refresh this PivotTable before editing cached field filters.");
+            return PivotFieldValues.Get(spec.Cache, field);
         };
         _pivotEditor.CommitChanges = next =>
         {
             _applyingInspector = true;
-            try { return Try(() => Session.SetPivotTable(next)); }
+            try { return Try(() => Session.ReconfigurePivotTable(next)); }
             finally
             {
                 _applyingInspector = false;

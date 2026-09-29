@@ -34,6 +34,12 @@ Observe("pivot-capture-and-aggregate", 12, 1, () =>
 });
 Observe("pivot-aggregate-captured-values", 20, 1, () => _ = PivotEngine.Build(snapshot, definition));
 session.AddSheet("Report"); session.SetPivotTable(definition);
+Observe("pivot-layout-with-source-refresh", 12, 1, () => session.SetPivotTable(
+    session.Sheet.PivotTables.Single() with { SortAscending = !session.Sheet.PivotTables.Single().SortAscending }));
+Observe("pivot-layout-from-immutable-cache", 12, 1, () => session.ReconfigurePivotTable(
+    session.Sheet.PivotTables.Single() with { SortAscending = !session.Sheet.PivotTables.Single().SortAscending }));
+var fieldCache = session.Sheet.PivotTables.Single().Cache!;
+Observe("cached-pivot-filter-catalog", 20, 100, () => _ = PivotFieldValues.Get(fieldCache, 0));
 var chartId = session.AddPivotChart(definition.Id);
 var chart = session.FindChart(chartId)!; var cache = new ChartDataCache();
 _ = cache.Get(book, session.Sheet, chart, session.Calculation);
