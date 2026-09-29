@@ -44,9 +44,9 @@ Keep the workbook engines free of Uno references. Keep platform file APIs in the
 
 **Desktop** builds the shared native host on Linux, Windows and macOS. Build success is not equivalent to manual validation of all native file dialogs and input methods on physical machines.
 
-**Release** is triggered by a `v*` tag or explicit workflow dispatch. It validates the version, reruns tests and browser acceptance, packages source/browser output and NuGet libraries, creates SHA-256 checksums, and creates a GitHub release. A prerelease suffix produces a GitHub prerelease. Configure `NUGET_API_KEY` only when publishing to nuget.org is intended; without it, packages remain downloadable release assets.
+**Release** is triggered by a `v*` tag or explicit workflow dispatch. It validates the version, reruns tests and browser acceptance, publishes self-contained single-file desktop executables (`GridSpace-<version>-<rid>.zip`/`.tar.gz` for win/linux/osx x64 and arm64), packages source/browser output and NuGet libraries, and creates SHA-256 checksums. Only tags create a GitHub release (a prerelease suffix produces a GitHub prerelease) and publish the packages to nuget.org using [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing): the `nuget` job runs in the protected `nuget` environment and exchanges a GitHub OIDC token for a short-lived API key via `NuGet/login` (set the `NUGET_USER` variable to the nuget.org profile name). No API key is stored. Manual dispatches are dry runs that upload every asset as workflow artifacts.
 
-Release artifacts are not signed platform installers. Signing/notarization credentials, trusted package-publishing policy and a full native installer pipeline are separate deployment concerns.
+Release artifacts are not signed platform installers. Signing/notarization credentials and a full native installer pipeline are separate deployment concerns.
 
 ## Recovery and troubleshooting
 

@@ -65,6 +65,20 @@ python3 scripts/serve-site.py --directory artifacts/site --port 4173
 
 Python and Node.js are development/test tools only. The deployed application requires no application backend or database server. Browser recovery is local to its origin and profile, not a cloud backup.
 
+## Download
+
+Every [release](https://github.com/wieslawsoltes/GridSpace/releases/latest) ships a self-contained, single-file desktop app — no .NET install needed:
+
+| OS | x64 | Arm64 |
+| --- | --- | --- |
+| Windows | `GridSpace-<version>-win-x64.zip` | `GridSpace-<version>-win-arm64.zip` |
+| macOS | `GridSpace-<version>-osx-x64.tar.gz` | `GridSpace-<version>-osx-arm64.tar.gz` |
+| Linux | `GridSpace-<version>-linux-x64.tar.gz` | `GridSpace-<version>-linux-arm64.tar.gz` |
+
+Extract and run `GridSpace` (`GridSpace.exe` on Windows). Builds are not code-signed yet: on macOS clear the quarantine flag with `xattr -d com.apple.quarantine GridSpace`; on Windows choose **More info → Run anyway** in SmartScreen. Verify downloads against `SHA256SUMS.txt`.
+
+The libraries below are published to [NuGet.org](https://www.nuget.org/packages?q=GridSpace), e.g. `dotnet add package GridSpace.Core --prerelease`.
+
 ## Reusable libraries
 
 Each library is independently packable. App is the platform composition root.
@@ -80,7 +94,7 @@ Each library is independently packable. App is the platform composition root.
 | `GridSpace.Controls` | Uno browser/desktop | Embeddable grid, ribbon, buttons/icons, formula bar/tabs/scrollbars, filter/sort/conditional editors |
 | `GridSpace.Workbench` | Uno browser/desktop | Complete workbench, commands, dialogs, filter popup, rule management and local recovery |
 
-CI generates eight `.nupkg` and eight `.snupkg` packages. Generation does not mean publication to nuget.org. The release workflow can publish when `NUGET_API_KEY` is configured.
+CI generates eight `.nupkg` and eight `.snupkg` packages. Version tags publish them to NuGet.org with [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing) (OIDC, no stored API key).
 
 ### Use the engines without a UI
 
@@ -140,7 +154,7 @@ Tests cover formulas, reference rewriting, rollback/history, native/XLSX interch
 
 Browser acceptance uses physical keyboard and pointer events. A `?test=1` read-only snapshot provides model state and current control bounds, not mutation hooks. Tests exercise both the original editing flows and the new rule editor/manager, filter popup, custom-sort editor and structural deletion; screenshots and traces are retained in CI artifacts.
 
-**Build** tests and publishes the actual Uno WebAssembly application, packs libraries, then deploys a successful main-branch build to Pages. The artifact's `build-info.json` commit is verified, and the browser suite runs again against the public URL. **Desktop** builds the shared native host on Linux, Windows and macOS. **Release** creates versioned source/browser archives, packages, checksums and a GitHub release/prerelease.
+**Build** tests and publishes the actual Uno WebAssembly application, packs libraries, then deploys a successful main-branch build to Pages. The artifact's `build-info.json` commit is verified, and the browser suite runs again against the public URL. **Desktop** builds the shared native host on Linux, Windows and macOS. **Release** runs for `v*` tags or a supplied manual version. It reruns tests and browser acceptance, publishes self-contained single-file desktop executables for Windows, macOS and Linux (x64 and arm64), and creates versioned source/browser archives, packages with symbols and checksums. Tags attach all assets to a GitHub release/prerelease and publish the packages to NuGet.org with Trusted Publishing from the protected `nuget` environment. Manual runs are dry runs: they build and upload every asset as workflow artifacts but publish nothing.
 
 ## Important boundaries
 

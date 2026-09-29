@@ -5,24 +5,28 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Package version, without the v prefix
+        description: Version for a dry run, without the v prefix (tags publish; manual runs only build and upload artifacts)
         required: true
         type: string
+        default: 0.3.0-alpha.1
 permissions:
   contents: read
 concurrency:
   group: release-${{ github.ref }}-${{ inputs.version }}
   cancel-in-progress: false
+env:
+  APP_NAME: GridSpace
+  APP_PROJECT: src/GridSpace.App/GridSpace.App.csproj
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
 jobs:
-  package:
+  version:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
       - name: Validate release version
         id: version
         env:
@@ -38,6 +42,71 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           if [[ "$VERSION" == *-* ]]; then echo 'prerelease=true' >> "$GITHUB_OUTPUT"; else echo 'prerelease=false' >> "$GITHUB_OUTPUT"; fi
+
+  desktop:
+    name: Desktop (${{ matrix.rid }})
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64]
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      RID: ${{ matrix.rid }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Fetch verified application font assets
+        run: python3 scripts/fetch-assets.py
+      - name: Publish self-contained single-file executable
+        shell: bash
+        run: |
+          dotnet publish "$APP_PROJECT" -c Release -f net10.0-desktop -r "$RID" --self-contained true \
+            -p:GridSpaceDesktopOnly=true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=none -p:DebugSymbols=false -p:Version="$VERSION" \
+            -o "artifacts/desktop/$RID"
+      - name: Package executable
+        shell: bash
+        run: |
+          OUT="artifacts/desktop/$RID"
+          find "$OUT" -name '*.pdb' -delete
+          mkdir -p artifacts/dist
+          BASE="$APP_NAME-$VERSION-$RID"
+          if [[ "$RID" == win-* ]]; then
+            mv "$OUT/$APP_NAME.App.exe" "$OUT/$APP_NAME.exe"
+            test "$(find "$OUT" -type f | wc -l)" -eq 1
+            (cd "$OUT" && zip -q "$GITHUB_WORKSPACE/artifacts/dist/$BASE.zip" "$APP_NAME.exe")
+          else
+            mv "$OUT/$APP_NAME.App" "$OUT/$APP_NAME"
+            chmod +x "$OUT/$APP_NAME"
+            test "$(find "$OUT" -type f | wc -l)" -eq 1
+            tar -C "$OUT" -czf "artifacts/dist/$BASE.tar.gz" "$APP_NAME"
+          fi
+          ls -la artifacts/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.rid }}
+          path: artifacts/dist/*
+          if-no-files-found: error
+
+  package:
+    needs: [version, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      version: ${{ needs.version.outputs.version }}
+      tag: ${{ needs.version.outputs.tag }}
+      prerelease: ${{ needs.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -52,16 +121,21 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Test engines and publish browser application
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           dotnet test tests/GridSpace.Tests -c Release --logger 'trx;LogFileName=release.trx' --results-directory artifacts/tests -p:Version="$VERSION"
           dotnet publish src/GridSpace.App -f net10.0-browserwasm -c Release -o artifacts/publish -p:WasmShellWebAppBasePath=/GridSpace/ -p:Version="$VERSION"
           python3 scripts/collect-site.py artifacts/publish artifacts/site
           python3 scripts/serve-site.py --directory artifacts/site --port 4173 > artifacts/server.log 2>&1 &
           npm run test:browser
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: artifacts/release
+          merge-multiple: true
       - name: Pack libraries and release archives
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/release
@@ -71,11 +145,18 @@ jobs:
           done
           git archive --format=zip --output="artifacts/release/GridSpace-$VERSION-source.zip" HEAD
           (cd artifacts/site && zip -qr "../release/GridSpace-$VERSION-browser.zip" .)
-          (cd artifacts/release && sha256sum *.nupkg *.snupkg *.zip > SHA256SUMS.txt)
+          (cd artifacts/release && sha256sum *.nupkg *.snupkg *.zip *.tar.gz > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: GridSpace-release
           path: artifacts/release
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: |
+            artifacts/release/*.nupkg
+            artifacts/release/*.snupkg
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
@@ -91,6 +172,7 @@ jobs:
           if-no-files-found: ignore
   publish:
     needs: package
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -115,16 +197,35 @@ jobs:
           EXTRA=()
           if [ "$PRERELEASE" = true ]; then EXTRA+=(--prerelease); fi
           gh release create "$TAG" release/* --target "$SOURCE_SHA" --title "GridSpace $TAG" --generate-notes "${EXTRA[@]}"
+
+  nuget:
+    name: Publish to NuGet.org (Trusted Publishing)
+    needs: [package, publish]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages
+          path: packages
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Publish packages when a NuGet key is configured
+      - name: Check NuGet user
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "$NUGET_API_KEY" ]; then echo 'No NuGet key configured; packages are available as GitHub release assets.'; exit 0; fi
-          for package in release/*.nupkg; do
-            dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
-          done
+          NUGET_USER: ${{ vars.NUGET_USER || secrets.NUGET_USER }}
+        run: test -n "$NUGET_USER" || { echo 'Set the NUGET_USER variable (your nuget.org profile name) for this repository or its nuget environment.' >&2; exit 1; }
+      - name: NuGet login (OIDC → short-lived API key)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER || secrets.NUGET_USER }}
+      - name: Push packages
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push "packages/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
