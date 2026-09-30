@@ -26,8 +26,8 @@ This ledger describes the implemented 0.4.0 alpha, not complete Excel fidelity. 
 | Dynamic arrays | Twelve array functions, LET, constants, broadcasting and # references; 100,000 cells per array and 200,000 derived cells per workbook; not every function lifts over arrays |
 | Charts | Nine multi-series families, explicit bindings, stacking, secondary combo axes, appearance/geometry editing and drawing deltas; no 3D/specialized/all-axis parity |
 | WYSIWYG chart editing | Selection, eight resize handles, drag preview/commit/cancel, inline title, keyboard nudge, duplicate, clipboard and z-order; physical-input acceptance covers supported chart gestures and selection handoff |
-| PivotTables | Local worksheet source, typed multi-dimension/multi-measure aggregation, filters, weighted totals, cache-preserving field/layout edits, explicit refresh, cached drill-through and protected output; flattened layout, no grouping/subtotals/OLAP |
-| Linked PivotCharts | Refresh-following chart over report cells; full Excel PivotChart field-button/file-format parity is not implemented |
+| PivotTables | Local worksheet source, typed multi-dimension/multi-measure aggregation, filters, weighted totals, cache-preserving field/layout edits, explicit refresh, cached drill-through and protected output; Compact/Outline/Tabular row layouts, uniform above/below subtotals and typed collapse/expand; no date/number bucketing, column hierarchy or OLAP |
+| Linked PivotCharts | Refresh-following chart over visible detail/collapsed report rows without duplicated subtotals; full Excel PivotChart field-button/file-format parity is not implemented |
 | Ribbon/dialogs | Custom Office-style shell and reusable compound editors; not pixel-identical Excel or every control recreated from first principles |
 | Accessibility | Named commands and active-cell description; no complete virtualized grid automation provider |
 
@@ -73,3 +73,7 @@ VBA/Office Scripts; advanced PivotTable/PivotChart variants; Power Query/data mo
 ## Charts and PivotTables
 
 See [charts and PivotTables](charts-pivots.md) for the supported model, editing, cache, chart and OOXML behavior. Standard chart parts, PivotTable definitions and source caches are emitted; this is not lossless arbitrary workbook editing. Source limits remain explicit. CI builds the full Uno WebAssembly/native hosts and runs physical-input acceptance, including field dragging/cancellation and report-refresh consistency. Schema validity and browser tests do not establish full Microsoft Excel interoperability.
+
+## Row hierarchy and chart projection
+
+See [PivotTable hierarchy](pivot-hierarchy.md). Standard XLSX carries supported layout/subtotal attributes, typed row-item projection and top-level hidden-detail flags. Full nested path state is retained by native JSON and the GridSpace extension. Hierarchy chart values use exact discontiguous source references; composite captions are exported as literal category labels, not misleading references to one row-label column. Standard-reader support for arbitrary external union/literal chart bindings remains incomplete. An imported report requiring layout conversion must be explicitly refreshed before charting, editing its cached layout or exporting its PivotTable definition.

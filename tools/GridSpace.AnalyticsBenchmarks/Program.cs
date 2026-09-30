@@ -54,6 +54,25 @@ Observe("chart-update-and-cached-data", 20, 20, () =>
     _ = cache.Get(book, session.Sheet, session.FindChart(ordinary.Id)!, session.Calculation);
 });
 Observe("xlsx-chart-and-pivot-cache-export", 5, 1, () => _ = XlsxWorkbook.Write(book));
+// Same captured records, now presented as a two-level row hierarchy.
+session.SwitchSheet(1);
+session.ReconfigurePivotTable(session.Sheet.PivotTables.Single() with
+{ Rows = [0, 1], Columns = [], Layout = PivotLayout.Compact, Subtotals = PivotSubtotals.Bottom });
+var hierarchyDefinition = session.Sheet.PivotTables.Single();
+Observe("pivot-hierarchy-aggregate-captured-values", 12, 1, () =>
+{
+    var report = PivotEngine.Build(snapshot, hierarchyDefinition);
+    if (report.RowBands.Count(b => b.Kind == PivotRowKind.Subtotal) != 50)
+        throw new InvalidOperationException("Bad hierarchy grouping.");
+});
+Observe("pivot-hierarchy-collapse-expand", 12, 1, () =>
+{
+    session.SetPivotGroupsExpanded(hierarchyDefinition.Id, false);
+    session.SetPivotGroupsExpanded(hierarchyDefinition.Id, true);
+});
+var currentHierarchy = session.Sheet.PivotTables.Single();
+var cachedReport = PivotReportCache.Get(currentHierarchy); _ = cachedReport.OutlineCells;
+Observe("cached-pivot-hierarchy-presentation", 20, 100, () => _ = PivotReportCache.Get(currentHierarchy).OutlineCells);
 Console.WriteLine(JsonSerializer.Serialize(new
 {
     schema = 1, runtime = RuntimeInformation.FrameworkDescription, os = RuntimeInformation.OSDescription,

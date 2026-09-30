@@ -2,6 +2,8 @@
 
 ## 0.4.0-alpha.1
 
+Adds Compact/Outline/Tabular row-axis layouts, typed nested collapse state, source-accumulated top/bottom subtotals, direct worksheet expand/collapse gestures, cached display-row provenance, and exact linked-chart detail projection. Supports native persistence and bounded standard XLSX layout/row-item metadata with independent schema tests. Full column hierarchy and every Excel grouping/file behavior are not claimed.
+
 Multi-series editable charts, reusable chart geometry/rendering and inspector controls, typed worksheet-source PivotTables, field lists, immutable source caches, refresh/drill-through, linked charts and standard chart/pivot XLSX parts. Drawing deltas retain calculation/layout caches; repeated PivotChart binding is allocation-free. Adds structural/clipboard/ownership/schema/raster regressions, an analytics sample and benchmark, and physical-input acceptance specifications. Full Uno SDK WebAssembly/native builds and physical-input chart/PivotTable acceptance are integrated in CI. Pivot field dragging uses owned pointer capture, preview feedback and cancellation; Name-box navigation relinquishes drawing selection. Cached field/layout edits reuse the last-refresh source snapshot, and weakly owned field-value catalogs avoid repeated source scans. Explicit Refresh and undo/redo retain coherent report/cache epochs. See [charts and PivotTables](docs/charts-pivots.md).
 
 
@@ -20,7 +22,7 @@ See [arrays and performance](docs/arrays-performance.md) for behavior, limits, r
 - Eleven conditional-format rule kinds, relative formulas, property-level differential style priorities, Stop If True, two/three-color scales and signed data bars.
 - Reusable filter, sort and conditional-rule editors; header filter flyouts; conditional rules manager with edit/delete/reorder.
 - Compound multi-column filtering, searchable value sets, And/Or predicates, wildcard escaping and separate manual/filter row visibility.
-- Stable multi-level value sorting with header/case options, blank-last ordering and formula translation.
+- Stable multi-level value sorts, header/case options, blank-last ordering and formula translation.
 - Bounded multi-row/column deletion and insertion, whole-interval reference transforms, metadata/rule rebasing and atomic rollback on overflow.
 - Supported XLSX conditional-rule/differential-style, AutoFilter and sort-state interchange, plus GridSpace visibility metadata.
 - Bounded, order-independent shared-formula expansion with mixed/absolute reference translation, recalculation and independent-formula export.

@@ -8,6 +8,8 @@
 
 GridSpace adds nine multi-series chart families, on-canvas move/resize/inline title editing, chart inspectors and clipboard operations, and refreshable worksheet-source PivotTables with field lists, filters, multiple measures, weighted totals and cached drill-through. Linked charts follow report refreshes. The XLSX writer emits chart parts, PivotTable definitions and typed source caches rather than only exporting flattened values.
 
+Row hierarchies now have in-grid expansion buttons, parent-label double-click, keyboard/ribbon commands, and source-accumulated subtotals above or below groups. Linked charts exclude duplicate totals. [Hierarchy details](docs/pivot-hierarchy.md).
+
 PivotTable field, filter, measure and layout edits reuse the immutable last-refresh source cache; Refresh explicitly reads current worksheet values. Field dragging owns its pointer gesture, with target highlighting and cancellation, rather than depending on browser-native data transfer. Drawing-to-cell navigation transfers editing ownership back to the grid.
 
 See [the implementation and compatibility guide](docs/charts-pivots.md) for APIs, safeguards, limits, browser interaction coverage and paired performance measurements. Full Uno WebAssembly and native builds, physical-input acceptance, package generation and deployment checks run in CI. **A successful main build deploys Pages; publishing this version to NuGet or creating desktop release assets remains a separate tagged-release operation.**
@@ -40,7 +42,7 @@ This remains a **functional alpha**, not a complete or pixel-identical Microsoft
 | Calculations | Arithmetic/comparison expressions, relative/absolute/mixed references, cross-sheet references, names, revision-based caching, bounded evaluation and common functions |
 | Worksheet tools | Find/replace, list validation, plain notes, styled table ranges, worksheet insertion/copy/rename/delete, manual hide/unhide |
 | Charts | Nine multi-series families, explicit bindings, stacking/secondary combo axes, eight-handle WYSIWYG geometry, inline titles, inspector, clipboard and chart XLSX parts |
-| PivotTables | Typed multidimensional grouping, multiple measures, filters, cache-preserving layout edits, explicit refresh, protected reports, cached drill-through and linked charts |
+| PivotTables | Typed multidimensional grouping, multiple measures, Compact/Outline/Tabular row hierarchy, subtotals, collapse/expand, filters, cached layout edits, explicit refresh, protected reports, drill-through and linked charts |
 | Files | Native `.gridspace` JSON, CSV/TSV and a documented XLSX subset; explicit browser downloads/file selection and native desktop pickers |
 | Recovery | Debounced IndexedDB recovery in the browser; atomic local recovery-file replacement on desktop |
 
@@ -422,7 +424,7 @@ Browser acceptance uses physical keyboard and pointer events. A `?test=1` read-o
 
 ## Important boundaries
 
-VBA, advanced PivotTable grouping/subtotals/OLAP, Power Query, external-data refresh, multiplayer editing, Excel add-ins, complete array/LAMBDA semantics, lossless arbitrary OOXML preservation, full print/page layout and complete virtualized-cell accessibility remain unimplemented. The custom workbench still uses Uno input/dialog primitives. Conditional-format clipboard propagation, arbitrary cell-shift deletion and advanced filter/chart variants also remain outside this increment.
+VBA, advanced PivotTable date/number bucketing/column hierarchy/OLAP, Power Query, external-data refresh, multiplayer editing, Excel add-ins, complete array/LAMBDA semantics, lossless arbitrary OOXML preservation, full print/page layout and complete virtualized-cell accessibility remain unimplemented. The custom workbench still uses Uno input/dialog primitives. Conditional-format clipboard propagation, arbitrary cell-shift deletion and advanced filter/chart variants also remain outside this increment.
 
 The alpha bounds expensive work: 100,000 cells per bulk edit, conditional range or sort; 100,000 filter data rows; 200,000 stored cells per imported sheet; 256 sheets; and 32 MB native/file import. See [compatibility](docs/compatibility.md) for exact subset behavior and limitations.
 

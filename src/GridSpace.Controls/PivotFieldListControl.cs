@@ -68,15 +68,18 @@ public sealed partial class PivotFieldListControl : UserControl
 
             var layout = OfficeForm.EnumChoice("Pivot report layout", _document.Layout);
             layout.SelectionChanged += (_, _) => Change(p => p with { Layout = OfficeForm.Value<PivotLayout>(layout) });
-            _root.Children.Add(OfficeForm.Field("Report layout", layout));
             var subtotal = OfficeForm.EnumChoice("Pivot subtotals", _document.Subtotals);
             subtotal.SelectionChanged += (_, _) => Change(p => p with { Subtotals = OfficeForm.Value<PivotSubtotals>(subtotal) });
-            _root.Children.Add(OfficeForm.Field("Subtotals", subtotal));
-            var outline = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            outline.Children.Add(Button("Pivot Expand All", "Expand all", () => ExpandGroupsRequested?.Invoke(true)));
-            outline.Children.Add(Button("Pivot Collapse All", "Collapse all", () => ExpandGroupsRequested?.Invoke(false)));
-            _root.Children.Add(outline);
-            Check("Pivot repeat labels", _document.RepeatRowLabels, value => Change(p => p with { RepeatRowLabels = value }));
+            // Keep the field catalog and the first drop area visible at normal desktop
+            // heights. Two compact layout fields replace a tall stack of duplicates.
+            var layoutFields = new Grid { ColumnSpacing = 8 };
+            layoutFields.ColumnDefinitions.Add(new ColumnDefinition());
+            layoutFields.ColumnDefinitions.Add(new ColumnDefinition());
+            layoutFields.Children.Add(OfficeForm.Field("Report layout", layout));
+            var subtotalField = OfficeForm.Field("Subtotals", subtotal);
+            Grid.SetColumn(subtotalField, 1); layoutFields.Children.Add(subtotalField);
+            _root.Children.Add(layoutFields);
+
 
             var addArea = OfficeForm.Choice("Pivot add area", new[] { "Rows", "Columns", "Values", "Filters" }.Select(s => new OfficeChoice<string>(s, s)), "Rows");
             _root.Children.Add(OfficeForm.Field("Add selected field to", addArea));
@@ -109,6 +112,11 @@ public sealed partial class PivotFieldListControl : UserControl
             Area("Columns", _document.Columns);
             ValueArea();
             FilterArea();
+            var outline = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            outline.Children.Add(Button("Pivot Expand All", "Expand all", () => ExpandGroupsRequested?.Invoke(true)));
+            outline.Children.Add(Button("Pivot Collapse All", "Collapse all", () => ExpandGroupsRequested?.Invoke(false)));
+            _root.Children.Add(outline);
+            Check("Pivot repeat labels", _document.RepeatRowLabels, value => Change(p => p with { RepeatRowLabels = value }));
             Check("Pivot grand total column", _document.RowGrandTotals, value => Change(p => p with { RowGrandTotals = value }));
             Check("Pivot grand total row", _document.ColumnGrandTotals, value => Change(p => p with { ColumnGrandTotals = value }));
             Check("Pivot sort ascending", _document.SortAscending, value => Change(p => p with { SortAscending = value }));

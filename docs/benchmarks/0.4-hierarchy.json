@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "runtime": ".NET 10.0.12",
+  "os": "Debian GNU/Linux 13 (trixie)",
+  "rows": 10000,
+  "storedSourceCells": 40004,
+  "chartDataResolutions": 2,
+  "observations": [
+    {
+      "name": "pivot-capture-and-aggregate",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 23.5906,
+      "medianAllocatedBytes": 10191608
+    },
+    {
+      "name": "pivot-aggregate-captured-values",
+      "samples": 20,
+      "operationsPerSample": 1,
+      "medianMs": 5.3093,
+      "medianAllocatedBytes": 8407320
+    },
+    {
+      "name": "pivot-layout-with-source-refresh",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 36.9843,
+      "medianAllocatedBytes": 15323024
+    },
+    {
+      "name": "pivot-layout-from-immutable-cache",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 18.2468,
+      "medianAllocatedBytes": 14056088
+    },
+    {
+      "name": "cached-pivot-filter-catalog",
+      "samples": 20,
+      "operationsPerSample": 100,
+      "medianMs": 6.9E-05,
+      "medianAllocatedBytes": 0
+    },
+    {
+      "name": "cached-pivot-chart-binding",
+      "samples": 20,
+      "operationsPerSample": 100,
+      "medianMs": 0.000197,
+      "medianAllocatedBytes": 0
+    },
+    {
+      "name": "chart-update-and-cached-data",
+      "samples": 20,
+      "operationsPerSample": 20,
+      "medianMs": 0.00689,
+      "medianAllocatedBytes": 2304
+    },
+    {
+      "name": "xlsx-chart-and-pivot-cache-export",
+      "samples": 5,
+      "operationsPerSample": 1,
+      "medianMs": 350.589,
+      "medianAllocatedBytes": 88557184
+    },
+    {
+      "name": "pivot-hierarchy-aggregate-captured-values",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 5.5374,
+      "medianAllocatedBytes": 8904336
+    },
+    {
+      "name": "pivot-hierarchy-collapse-expand",
+      "samples": 12,
+      "operationsPerSample": 1,
+      "medianMs": 31.8942,
+      "medianAllocatedBytes": 30461408
+    },
+    {
+      "name": "cached-pivot-hierarchy-presentation",
+      "samples": 20,
+      "operationsPerSample": 100,
+      "medianMs": 3.7000000000000005E-05,
+      "medianAllocatedBytes": 0
+    }
+  ]
+}

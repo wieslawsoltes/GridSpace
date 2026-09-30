@@ -30,7 +30,7 @@ Field dragging uses the reusable `OfficeDragButton`: a six-DIP movement threshol
 
 Each measure chooses **Sum, Count, Count Numbers, Average, Minimum, Maximum, Product, sample/population standard deviation, or sample/population variance**. It also supports normal values and percentages of the row, column, or grand total; captions and number formats are editable. Multiple measures and multiple row/column dimensions are supported. Case-insensitive textual groups remain distinct from numeric groups: numeric `1` and textual `"1"` do not collapse together.
 
-Aggregation uses typed hash keys, compensated sums and Welford statistics. Grand totals are calculated from source accumulators, not by averaging already aggregated averages. Report filters are applied before accumulation. The implemented layout is a flattened tabular header with repeated row labels, not Excel's complete compact/outline/subtotal hierarchy.
+Aggregation uses typed hash keys, compensated sums and Welford statistics. Grand totals are calculated from source accumulators, not by averaging already aggregated averages. Report filters are applied before accumulation. The row axis supports Compact, Outline and Tabular presentation, source-accumulated subtotals above or below groups, optional repeated tabular labels, and typed nested collapse paths. The column axis remains flat. See [row hierarchy](pivot-hierarchy.md) for editing, provenance and interchange details.
 
 Refresh is explicit. Source edits do not silently rebuild reports or change their detail records. Each report stores immutable, typed source values from the last refresh. Double-click a numeric report cell, or use **Show Details**, to create a worksheet containing contributing records from that same snapshot. Filtered-out source records remain in the cache so a subsequent filter change can use the full captured source. A live refresh captures the current source again.
 
@@ -40,9 +40,9 @@ Refresh is explicit. Source edits do not silently rebuild reports or change thei
 
 Report values are owned output. Partial input edits, sorts, merges, pastes or structural edits through the report are rejected. Styling remains available, although refresh reapplies its header, stripe, totals and measure-number styles. A refresh fully computes and checks replacement output before clearing or writing cells. Expansion cannot overwrite occupied cells, another report, merged cells, spilled arrays or any PivotTable source range. Undo/redo records output deltas and immutable cache/definition snapshots instead of serializing unrelated worksheets.
 
-A linked PivotChart follows the report's current category/measure region and omits grand-total rows/columns. Copied report sheets receive independent report/chart IDs and corrected self-sheet bindings. Source-schema changes rebase referenced fields and invalidate an incompatible cached schema; refresh is required before saving/drilling through that cache. Deleting a referenced source header, selected field, or source worksheet is rejected rather than silently corrupting its reports.
+A linked PivotChart follows the report's current category/measure region. It plots detail rows or collapsed aggregates, never both, and omits group headers, subtotals and grand-total rows/columns. Copied report sheets receive independent report/chart IDs and corrected self-sheet bindings. Source-schema changes rebase referenced fields and invalidate an incompatible cached schema; refresh is required before saving/drilling through that cache. Deleting a referenced source header, selected field, or source worksheet is rejected rather than silently corrupting its reports.
 
-Limits: 32 reports per sheet; 256 source fields; 8 row and 8 column dimensions; 16 measures; 32 report filters; 10,000 explicitly selected values per filter; 200,000 cached/source cells and 100,000 output cells per report. Date/number grouping, subtotals, expand/collapse, calculated fields/items, slicers, timelines, OLAP/data models and arbitrary external sources are not implemented.
+Limits: 32 reports per sheet; 256 source fields; 8 row and 8 column dimensions; 16 measures; 32 report filters; 10,000 explicitly selected values per filter; 200,000 cached/source cells and 100,000 output cells per report. Date/number bucketing, column-axis hierarchy, mixed per-field subtotal policies, calculated fields/items, slicers, timelines, OLAP/data models and arbitrary external sources are not implemented. Row hierarchy is limited to 400,000 accumulator cells and 10,000 collapsed paths with at most 512 KB of path metadata; output still has a 100,000-cell bound.
 
 ## Native and XLSX persistence
 
@@ -52,7 +52,7 @@ Chart XLSX parts contain real multi-series chart definitions, styles, caches, ax
 
 Pivot export writes **workbook cache registrations, `pivotCacheDefinition`, typed shared items, `pivotCacheRecords`, `pivotTableDefinition`, and the required package relationships**, alongside worksheet result cells. Chart and PivotTable relationships coexist in the same worksheet relationship part. Cache records use the last-refresh snapshot, not fresh source values paired with stale report cells.
 
-The ordinary worksheet-source PivotTable reader accepts supported row/column/data/page fields and aggregate/show-as settings. Unsupported external layouts preserve their worksheet values and require an explicit refresh before converting to GridSpace's flattened report or enabling drill-through. It does not pretend to preserve arbitrary grouped, subtotalled, OLAP or calculated-field definitions. Unknown content remains subject to the existing non-lossless XLSX boundary.
+The ordinary worksheet-source PivotTable reader accepts supported row/column/data/page fields, aggregate/show-as settings and row layout/subtotal attributes. External layouts preserve their saved worksheet values and require explicit refresh before conversion to GridSpace's supported report presentation or enabling drill-through. Arbitrary grouped, mixed per-field subtotal, OLAP and calculated-field definitions are not preserved losslessly. Unknown content remains subject to the existing non-lossless XLSX boundary.
 
 A GridSpace-linked PivotChart is currently exported as a **standard chart over PivotTable result cells**, plus the GridSpace linkage extension. Full native Excel PivotChart field buttons, pivot chart filters and every pivot-specific chart record are not emitted.
 
@@ -150,3 +150,7 @@ Behavior and packaging were checked against Microsoft's PivotTable and chart doc
 - https://support.microsoft.com/en-us/office/create-a-pivottable-to-analyze-worksheet-data-a9a84538-bfe9-40a9-a8e9-f99134456576
 
 No Microsoft binary, logo, proprietary font or extracted application asset was added.
+
+## Hierarchical layouts
+
+The field list exposes Report layout, Subtotals, repeated labels, Expand all and Collapse all. Painted worksheet buttons and double-clicked parent labels toggle groups without opening a dialog. Ctrl+Alt+Left/Right collapses/expands a selected parent label. The contextual PivotTable Analyze ribbon exposes the same operations. Escape or a cancelled/moved pointer gesture leaves the report unchanged. See [the hierarchy contract](pivot-hierarchy.md).
