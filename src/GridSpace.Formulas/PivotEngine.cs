@@ -45,34 +45,6 @@ public sealed class PivotKey : IEquatable<PivotKey>
 
 public sealed record PivotSource(string[] Headers, IReadOnlyList<CalcValue[]> Rows);
 
-/// <summary>An owned calculation snapshot. Result cells include headers/totals; coordinates are report-relative.</summary>
-public sealed class PivotReport
-{
-    public required PivotTableSpec Definition { get; init; }
-    public required PivotSource Source { get; init; }
-    public required IReadOnlyList<PivotKey> RowKeys { get; init; }
-    public required IReadOnlyList<PivotKey> ColumnKeys { get; init; }
-    public required CalcValue[] Cells { get; init; }
-    public required int ColumnCount { get; init; }
-    public int RowCount => Cells.Length / ColumnCount;
-    public int LabelColumns => Math.Max(1, Definition.Rows.Count);
-    public CalcValue this[int row, int column] => Cells[row * ColumnCount + column];
-
-    public IReadOnlyList<CalcValue[]> DrillDown(int row, int column)
-    {
-        if (row < 1 || row >= RowCount || column < LabelColumns || column >= ColumnCount)
-            throw new ArgumentException("Select a PivotTable value, not a header or label.");
-        var rowKey = row - 1 < RowKeys.Count ? RowKeys[row - 1] : null;
-        var group = (column - LabelColumns) / Definition.Values.Count;
-        var columnKey = group < ColumnKeys.Count ? ColumnKeys[group] : null;
-        return Source.Rows.Where(values => (rowKey is null || Key(values, Definition.Rows).Equals(rowKey))
-            && (columnKey is null || Key(values, Definition.Columns).Equals(columnKey))).ToArray();
-    }
-
-    internal static PivotKey Key(CalcValue[] values, IReadOnlyList<int> fields) =>
-        fields.Count == 0 ? PivotKey.Empty : new(fields.Select(i => values[i]));
-}
-
 /// <summary>Single-pass hash aggregation. Every source cell is evaluated once per captured snapshot.</summary>
 public static class PivotEngine
 {
@@ -144,36 +116,45 @@ public static class PivotEngine
         var buckets = new Dictionary<(int Row, int Column), Accumulator[]>();
         var rowTotals = new Dictionary<int, Accumulator[]>();
         var columnTotals = new Dictionary<int, Accumulator[]>();
+        var hierarchical = spec.Layout != PivotLayout.Tabular || spec.Subtotals != PivotSubtotals.None || spec.CollapsedRows.Count > 0;
+        var aggregateCells = 0;
         var total = Create();
         foreach (var row in source.Rows)
         {
-            if (row.Length != source.Headers.Length) throw new ArgumentException("Inconsistent source row width.");
-            var rk = PivotReport.Key(row, spec.Rows); var ck = PivotReport.Key(row, spec.Columns);
-            if (!rowKeys.TryGetValue(rk, out var ri)) rowKeys.Add(rk, ri = rowKeys.Count);
+            var ck = PivotReport.Key(row, spec.Columns);
             if (!columnKeys.TryGetValue(ck, out var ci)) columnKeys.Add(ck, ci = columnKeys.Count);
-            if ((long)rowKeys.Count * columnKeys.Count * spec.Values.Count > 100_000)
-                throw new InvalidOperationException("PivotTable result exceeds 100,000 cells. Reduce dimension cardinality or filter the source.");
-            Add(Get(buckets, (ri, ci)), row);
-            Add(Get(rowTotals, ri), row);
+            // Prefixes receive source observations directly. Average/variance/product subtotals
+            // must never be computed from already aggregated child display values.
+            for (var depth = hierarchical ? Math.Min(1, spec.Rows.Count) : spec.Rows.Count; depth <= spec.Rows.Count; depth++)
+            {
+                var rk = depth == 0 ? PivotKey.Empty : new PivotKey(spec.Rows.Take(depth).Select(f => row[f]));
+                if (!rowKeys.TryGetValue(rk, out var ri)) rowKeys.Add(rk, ri = rowKeys.Count);
+                Add(Get(buckets, (ri, ci)), row);
+                Add(Get(rowTotals, ri), row);
+            }
             Add(Get(columnTotals, ci), row);
             Add(total, row);
         }
         if (rowKeys.Count == 0) rowKeys.Add(PivotKey.Empty, 0);
         if (columnKeys.Count == 0) columnKeys.Add(PivotKey.Empty, 0);
-        var rows = rowKeys.Keys.OrderBy(k => k, KeyComparer.Instance).ToArray();
+        var ordered = rowKeys.Keys.OrderBy(k => k, KeyComparer.Instance).ToArray();
+        var rows = ordered.Where(k => k.Items.Count == spec.Rows.Count || k.Items.Count == 0).ToArray();
         var columns = columnKeys.Keys.OrderBy(k => k, KeyComparer.Instance).ToArray();
-        if (!spec.SortAscending) { Array.Reverse(rows); Array.Reverse(columns); }
-        var labels = Math.Max(1, spec.Rows.Count);
+        if (!spec.SortAscending) { Array.Reverse(ordered); Array.Reverse(rows); Array.Reverse(columns); }
+        var bands = PivotHierarchy.CreateBands(ordered, spec);
+        var labels = spec.Layout == PivotLayout.Compact ? 1 : Math.Max(1, spec.Rows.Count);
         var totalColumn = spec.RowGrandTotals && spec.Columns.Count > 0;
         var totalRow = spec.ColumnGrandTotals && spec.Rows.Count > 0;
+        if (totalRow) bands.Add(new(PivotKey.Empty, PivotRowKind.GrandTotal));
         var width = labels + (columns.Length + (totalColumn ? 1 : 0)) * spec.Values.Count;
-        var height = 1 + rows.Length + (totalRow ? 1 : 0);
+        var height = 1 + bands.Count;
         if ((long)width * height > 100_000 || definition.Anchor.Column + width > CellAddress.MaxColumns
             || definition.Anchor.Row + height > CellAddress.MaxRows)
             throw new InvalidOperationException("PivotTable output exceeds the worksheet or 100,000-cell result limit.");
         var cells = Enumerable.Repeat(CalcValue.Blank, width * height).ToArray();
         void Set(int r, int c, CalcValue value) => cells[r * width + c] = value;
-        for (var i = 0; i < labels; i++) Set(0, i, CalcValue.Str(spec.Rows.Count == 0 ? "Values" : source.Headers[spec.Rows[i]]));
+        for (var i = 0; i < labels; i++) Set(0, i, CalcValue.Str(spec.Rows.Count == 0 ? "Values"
+            : spec.Layout == PivotLayout.Compact ? "Row Labels" : source.Headers[spec.Rows[i]]));
         for (var c = 0; c < columns.Length + (totalColumn ? 1 : 0); c++)
         {
             for (var v = 0; v < spec.Values.Count; v++)
@@ -183,17 +164,31 @@ public static class PivotEngine
                 Set(0, labels + c * spec.Values.Count + v, CalcValue.Str(group.Length == 0 ? name : group + " · " + name));
             }
         }
-        for (var r = 0; r < rows.Length + (totalRow ? 1 : 0); r++)
+        for (var r = 0; r < bands.Count; r++)
         {
-            var isTotalRow = r == rows.Length;
+            var band = bands[r];
+            var isTotalRow = band.Kind == PivotRowKind.GrandTotal;
             if (isTotalRow) Set(r + 1, 0, CalcValue.Str("Grand Total"));
-            else if (spec.Rows.Count == 0 || rows[r].Items.Count == 0) Set(r + 1, 0, CalcValue.Str(spec.Rows.Count == 0 ? "Total" : "(blank)"));
-            else for (var l = 0; l < rows[r].Items.Count; l++)
-                Set(r + 1, l, rows[r].Items[l].Kind == ValueKind.Blank ? CalcValue.Str("(blank)") : rows[r].Items[l]);
+            else if (band.Key.Items.Count == 0) Set(r + 1, 0, CalcValue.Str(spec.Rows.Count == 0 ? "Total" : "(blank)"));
+            else
+            {
+                var depth = band.Key.Items.Count - 1;
+                for (var l = 0; l <= depth; l++)
+                {
+                    if (spec.Layout != PivotLayout.Tabular && l != depth) continue;
+                    if (spec.Layout == PivotLayout.Tabular && !spec.RepeatRowLabels && l < depth && r > 0
+                        && PivotHierarchy.StartsWith(bands[r - 1].Key, band.Key, l + 1)) continue;
+                    var label = band.Key.Items[l];
+                    if (label.Kind == ValueKind.Blank) label = CalcValue.Str("(blank)");
+                    if (l == depth && band.Kind == PivotRowKind.Subtotal) label = CalcValue.Str(label + " Total");
+                    Set(r + 1, spec.Layout == PivotLayout.Compact ? 0 : l, label);
+                }
+            }
+            if (band.Kind == PivotRowKind.GroupHeader) continue;
             for (var c = 0; c < columns.Length + (totalColumn ? 1 : 0); c++)
             {
                 var isTotalColumn = c == columns.Length;
-                var ri = isTotalRow ? -1 : rowKeys[rows[r]];
+                var ri = isTotalRow ? -1 : rowKeys[band.Key];
                 var ci = isTotalColumn ? -1 : columnKeys[columns[c]];
                 var bucket = isTotalRow ? isTotalColumn ? total : columnTotals.GetValueOrDefault(ci)
                     : isTotalColumn ? rowTotals.GetValueOrDefault(ri) : buckets.GetValueOrDefault((ri, ci));
@@ -215,9 +210,15 @@ public static class PivotEngine
                 }
             }
         }
-        return new() { Definition = spec, Source = source, RowKeys = rows, ColumnKeys = columns, ColumnCount = width, Cells = cells };
+        return new() { Definition = spec, Source = source, RowKeys = rows, ColumnKeys = columns,
+            RowBands = bands.AsReadOnly(), ColumnCount = width, Cells = cells };
 
-        Accumulator[] Create() => Enumerable.Range(0, spec.Values.Count).Select(_ => new Accumulator()).ToArray();
+        Accumulator[] Create()
+        {
+            aggregateCells += spec.Values.Count;
+            if (aggregateCells > 400_000) throw new InvalidOperationException("PivotTable hierarchy exceeds the 400,000-accumulator budget.");
+            return Enumerable.Range(0, spec.Values.Count).Select(_ => new Accumulator()).ToArray();
+        }
         Accumulator[] Get<T>(Dictionary<T, Accumulator[]> table, T key) where T : notnull
         {
             if (!table.TryGetValue(key, out var value)) table.Add(key, value = Create());

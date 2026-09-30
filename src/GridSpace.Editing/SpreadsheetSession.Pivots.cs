@@ -32,9 +32,9 @@ public sealed partial class SpreadsheetSession
     {
         // A live refresh captures a replacement cache, not the previous schema's cache.
         ArgumentNullException.ThrowIfNull(definition);
-        definition = definition with { Cache = null };
+        definition = (definition with { Cache = null }).CloneDocument();
+        definition.NormalizeCollapseState();
         definition.Validate();
-        definition = definition.CloneDocument();
         var original = Sheet.PivotTables.FirstOrDefault(p => p.Id == definition.Id);
         if (original is null && Sheet.PivotTables.Count >= 32) throw new InvalidOperationException("A sheet supports at most 32 PivotTables.");
         if (Book.Sheets.SelectMany(s => s.PivotTables).Any(p => p.Id != definition.Id && p.Name.Equals(definition.Name, StringComparison.OrdinalIgnoreCase)))
@@ -49,6 +49,9 @@ public sealed partial class SpreadsheetSession
             cache = original.Cache;
         }
         var source = cache is null ? PivotEngine.Capture(Book, definition, Calculation) : PivotEngine.FromCache(cache);
+        if (refreshSource && original is not null)
+            definition.CollapsedRows.RemoveAll(path => path.Fields.Any(field => field >= original.FieldNames.Length
+                || !source.Headers[field].Equals(original.FieldNames[field], StringComparison.OrdinalIgnoreCase)));
         var report = PivotEngine.Build(source, definition);
         var anchor = definition.Anchor;
         var output = new CellRange(anchor, new(anchor.Row + report.RowCount - 1, anchor.Column + report.ColumnCount - 1));
@@ -67,7 +70,7 @@ public sealed partial class SpreadsheetSession
             OutputRange = output.ToString(),
             NeedsLayoutRefresh = false,
             Cache = cache ?? PivotEngine.ToCache(source),
-            ChartRange = new CellRange(anchor, new(anchor.Row + report.RowKeys.Count, anchor.Column + report.LabelColumns
+            ChartRange = new CellRange(anchor, new(anchor.Row + report.RowBands.Count(b => b.Kind != PivotRowKind.GrandTotal), anchor.Column + report.LabelColumns
                 + report.ColumnKeys.Count * definition.Values.Count - 1)).ToString(),
             FieldNames = report.Source.Headers.ToArray(),
             LastSourceRowCount = report.Source.Rows.Count
@@ -79,7 +82,7 @@ public sealed partial class SpreadsheetSession
         {
             var address = new CellAddress(anchor.Row + r, anchor.Column + c);
             var header = r == 0;
-            var grand = r > report.RowKeys.Count || c >= report.LabelColumns + report.ColumnKeys.Count * definition.Values.Count;
+            var grand = r > 0 && report.RowBands[r - 1].Kind is PivotRowKind.Subtotal or PivotRowKind.Collapsed or PivotRowKind.GrandTotal || c >= report.LabelColumns + report.ColumnKeys.Count * definition.Values.Count;
             var format = c < report.LabelColumns ? "General" : definition.Values[(c - report.LabelColumns) % definition.Values.Count] is { } value
                 ? value.ShowAs == PivotShowAs.Normal ? value.NumberFormat : "0.00%" : "General";
             var style = Sheet.Get(address).Style with
@@ -99,6 +102,7 @@ public sealed partial class SpreadsheetSession
         var metadata = new PivotPatch(index, original?.CloneDocument(), after);
         foreach (var patch in patches) Sheet.Set(patch.Address, patch.After);
         ReplayPivot(metadata, true);
+        PivotReportCache.Remember(Sheet.PivotTables[index], report);
         if (!_inTransaction)
         {
             var action = (refreshSource ? "Refresh " : "Layout ") + after.Name;
@@ -106,6 +110,40 @@ public sealed partial class SpreadsheetSession
             _redo.Clear(); TrimHistory(); IsDirty = true; Notify(action, true);
         }
         return report;
+    }
+
+    /// <summary>Expand or collapse a typed group from the report's last-refresh snapshot, never from live source edits.</summary>
+    public void TogglePivotGroup(string id, PivotGroupPath group)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        var pivot = Sheet.PivotTables.FirstOrDefault(p => p.Id == id) ?? throw new InvalidOperationException("Select a PivotTable first.");
+        var report = PivotReportCache.Get(pivot);
+        if (!group.IsCompatible(pivot.Rows) || group.Values.IsDefault || group.Values.Length != group.Fields.Length)
+            throw new ArgumentException("The row group no longer belongs to this PivotTable.");
+        var key = PivotHierarchy.Key(group);
+        if (!report.RowKeys.Any(leaf => PivotHierarchy.StartsWith(leaf, key)))
+            throw new InvalidOperationException("This row group no longer exists in the filtered report.");
+        var next = pivot.CloneDocument();
+        var removed = next.CollapsedRows.RemoveAll(path => PivotHierarchy.SamePath(path, group));
+        if (removed == 0) next.CollapsedRows.Add(group);
+        var updated = ReconfigurePivotTable(next);
+        var target = updated.OutlineCells.FirstOrDefault(p => p.Value.Group is { } path && PivotHierarchy.SamePath(path, group));
+        if (target.Value.Group is not null)
+        {
+            var address = new CellAddress(next.Anchor.Row + target.Key.Row, next.Anchor.Column + target.Key.Column);
+            Select(new CellRange(address, address));
+        }
+    }
+
+    public void SetPivotGroupsExpanded(string id, bool expanded)
+    {
+        var pivot = Sheet.PivotTables.FirstOrDefault(p => p.Id == id) ?? throw new InvalidOperationException("Select a PivotTable first.");
+        var report = PivotReportCache.Get(pivot);
+        var next = pivot.CloneDocument();
+        next.CollapsedRows = expanded || pivot.Rows.Count < 2 ? [] : report.RowKeys
+            .Where(k => k.Items.Count > 0).Select(k => new PivotKey(k.Items.Take(1))).Distinct()
+            .Select(k => PivotHierarchy.Path(pivot, k)).ToList();
+        ReconfigurePivotTable(next);
     }
 
     public void RefreshPivotTable(string id)
@@ -143,7 +181,7 @@ public sealed partial class SpreadsheetSession
     {
         var pivot = PivotAt(address) ?? throw new InvalidOperationException("Select a PivotTable value.");
         if (pivot.NeedsLayoutRefresh) throw new InvalidOperationException("Refresh this imported PivotTable before drilling through its converted layout.");
-        var report = PivotEngine.FromCache(pivot);
+        var report = PivotReportCache.Get(pivot);
         var rows = report.DrillDown(address.Row - pivot.Anchor.Row, address.Column - pivot.Anchor.Column);
         if ((long)(rows.Count + 1) * report.Source.Headers.Length > 100_000)
             throw new InvalidOperationException("Drill-through exceeds the 100,000-cell operation limit.");
@@ -160,7 +198,7 @@ public sealed partial class SpreadsheetSession
     public string AddPivotChart(string id)
     {
         var pivot = Sheet.PivotTables.FirstOrDefault(p => p.Id == id) ?? throw new InvalidOperationException("Select a PivotTable first.");
-        if (pivot.ChartRange is null) throw new InvalidOperationException("Refresh the PivotTable before charting it.");
+        if (pivot.NeedsLayoutRefresh || pivot.Cache is null || pivot.ChartRange is null) throw new InvalidOperationException("Refresh the PivotTable before charting it.");
         var range = CellRange.Parse(pivot.ChartRange);
         return AddChart(new ChartSpec
         {

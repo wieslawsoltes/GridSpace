@@ -1,4 +1,6 @@
 using GridSpace.Core;
+using GridSpace.Formulas;
+using System.Collections.Immutable;
 
 namespace GridSpace.Editing;
 
@@ -63,6 +65,7 @@ public sealed partial class SpreadsheetSession
             }
             foreach (var pivot in host.PivotTables)
             {
+                PivotReportCache.Invalidate(pivot);
                 if (host == Sheet)
                 {
                     pivot.Destination = edit.Map(pivot.Anchor)!.Value.ToString();
@@ -75,6 +78,7 @@ public sealed partial class SpreadsheetSession
                 pivot.SourceRange = next.ToString();
                 if (edit.Rows || next.Right - next.Left == old.Right - old.Left) continue;
                 int Field(int index) => edit.MapIndex(old.Left + index)!.Value - next.Left;
+                pivot.CollapsedRows = pivot.CollapsedRows.Select(path => path with { Fields = path.Fields.Select(Field).ToImmutableArray() }).ToList();
                 pivot.Rows = pivot.Rows.Select(Field).ToList(); pivot.Columns = pivot.Columns.Select(Field).ToList();
                 pivot.Values = pivot.Values.Select(v => v with { Field = Field(v.Field) }).ToList();
                 pivot.Filters = pivot.Filters.Select(f => f with { Field = Field(f.Field) }).ToList();

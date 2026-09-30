@@ -16,8 +16,13 @@ public static partial class XlsxWorkbook
     private static XElement CE(string name, params object?[] content) => new(C + name, content);
     private static XElement CV(string name, object value) => CE(name, new XAttribute("val", value));
     private static XElement Solid(string color) => new(A + "solidFill", new XElement(A + "srgbClr", new XAttribute("val", color.TrimStart('#'))));
-    private static string ChartReference(string sheet, string vector)
+    private static string ChartReference(string sheet, string vector, IReadOnlyList<string>? areas = null)
     {
+        if (areas is { Count: > 0 })
+        {
+            var references = areas.Select(area => ChartReference(sheet, area)).ToArray();
+            return references.Length == 1 ? references[0] : "(" + string.Join(",", references) + ")";
+        }
         var range = CellRange.Parse(vector);
         string Cell(CellAddress address) => "$" + CellAddress.ColumnName(address.Column) + "$" + (address.Row + 1);
         return "'" + sheet.Replace("'", "''") + "'!" + Cell(range.Start) + ":" + Cell(range.End);
@@ -157,20 +162,20 @@ public static partial class XlsxWorkbook
         if (kind is ChartKind.Pie or ChartKind.Doughnut)
             for (var i = 0; i < data.Categories.Length; i++)
                 series.Add(CE("dPt", CV("idx", i), CE("spPr", Solid(ChartDataResolver.Palette[i % ChartDataResolver.Palette.Length]))));
-        if (kind == ChartKind.Scatter) series.Add(CE("xVal", NumericReference(data.SourceSheet, data.CategoriesRange, data.XValues)));
+        if (kind == ChartKind.Scatter) series.Add(CE("xVal", NumericReference(data.SourceSheet, data.CategoriesRange, data.XValues, data.CategoryAreas)));
         else
         {
             var cache = CE("strCache", CV("ptCount", data.Categories.Length),
                 data.Categories.Select((text, i) => CE("pt", new XAttribute("idx", i), CE("v", text))));
-            series.Add(CE("cat", CE("strRef", CE("f", ChartReference(data.SourceSheet, data.CategoriesRange)), cache)));
+            series.Add(CE("cat", CE("strRef", CE("f", ChartReference(data.SourceSheet, data.CategoriesRange, data.CategoryAreas)), cache)));
         }
-        series.Add(CE(kind == ChartKind.Scatter ? "yVal" : "val", NumericReference(data.SourceSheet, vector.ValuesRange, vector.Values)));
+        series.Add(CE(kind == ChartKind.Scatter ? "yVal" : "val", NumericReference(data.SourceSheet, vector.ValuesRange, vector.Values, vector.ReferenceAreas)));
         if (kind is ChartKind.Line or ChartKind.Scatter) series.Add(CV("smooth", 0));
         return series;
     }
 
-    private static XElement NumericReference(string sheet, string range, double?[] values) =>
-        CE("numRef", CE("f", ChartReference(sheet, range)), CE("numCache", CE("formatCode", "General"), CV("ptCount", values.Length),
+    private static XElement NumericReference(string sheet, string range, double?[] values, IReadOnlyList<string>? areas = null) =>
+        CE("numRef", CE("f", ChartReference(sheet, range, areas)), CE("numCache", CE("formatCode", "General"), CV("ptCount", values.Length),
             values.Select((v, i) => v is null ? null : CE("pt", new XAttribute("idx", i), CE("v", F(v.Value))))));
 
     private static void ReadCharts(ZipArchive zip, string sheetPath, XElement worksheet, Worksheet sheet, List<string> warnings)

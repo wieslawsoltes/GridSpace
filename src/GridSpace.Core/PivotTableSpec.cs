@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 namespace GridSpace.Core;
 
 public enum PivotAggregate { Sum, Count, CountNumbers, Average, Min, Max, Product, StandardDeviation, PopulationStandardDeviation, Variance, PopulationVariance }
+public enum PivotLayout { Tabular, Outline, Compact }
+public enum PivotSubtotals { None, Top, Bottom }
 public enum PivotShowAs { Normal, PercentOfRow, PercentOfColumn, PercentOfGrandTotal }
 public sealed record PivotValueField
 {
@@ -30,6 +32,10 @@ public sealed record PivotTableSpec
     public List<int> Columns { get; set; } = [];
     public List<PivotValueField> Values { get; set; } = [];
     public List<PivotFilter> Filters { get; set; } = [];
+    public PivotLayout Layout { get; set; }
+    public PivotSubtotals Subtotals { get; set; }
+    public bool RepeatRowLabels { get; set; } = true;
+    public List<PivotGroupPath> CollapsedRows { get; set; } = [];
     public bool RowGrandTotals { get; set; } = true;
     public bool ColumnGrandTotals { get; set; } = true;
     public bool SortAscending { get; set; } = true;
@@ -46,8 +52,12 @@ public sealed record PivotTableSpec
     {
         Rows = Rows.ToList(), Columns = Columns.ToList(), Values = Values.ToList(),
         Filters = Filters.Select(f => f with { Values = f.Values.ToArray() }).ToList(),
-        FieldNames = FieldNames.ToArray()
+        FieldNames = FieldNames.ToArray(), CollapsedRows = CollapsedRows.ToList()
     };
+
+    /// <summary>Discard collapse paths whose source-field prefix no longer describes the row axis.</summary>
+    public void NormalizeCollapseState() => CollapsedRows = CollapsedRows
+        .Where(p => p is not null && p.IsCompatible(Rows)).ToList();
 
     public void Validate()
     {
@@ -58,8 +68,18 @@ public sealed record PivotTableSpec
         var range = CellRange.Parse(SourceRange);
         _ = Anchor;
         if (range.Count > 200_000 || range.Bottom == range.Top) throw new ArgumentException("A PivotTable source requires a header and data, at most 200,000 cells.");
-        if (Rows is null || Columns is null || Values is null || Filters is null || FieldNames is null)
+        if (Rows is null || Columns is null || Values is null || Filters is null || FieldNames is null || CollapsedRows is null)
             throw new ArgumentException("PivotTable collections cannot be null.");
+        if (!Enum.IsDefined(Layout) || !Enum.IsDefined(Subtotals)) throw new ArgumentException("Unknown PivotTable layout.");
+        if (CollapsedRows.Count > 10_000) throw new ArgumentException("A report supports at most 10,000 collapsed groups.");
+        long pathBytes = 0;
+        foreach (var path in CollapsedRows)
+        {
+            if (path is null || !path.IsCompatible(Rows) || path.Values.IsDefault || path.Values.Length != path.Fields.Length
+                || path.Values.Any(v => v is null || v.Length > 32767)) throw new ArgumentException("Invalid collapsed row-group path.");
+            pathBytes += path.Values.Sum(v => (long)v.Length * 2) + path.Fields.Length * 4L;
+        }
+        if (pathBytes > 512 * 1024) throw new ArgumentException("Collapsed group metadata exceeds 512 KB.");
         if (Rows.Count > 8 || Columns.Count > 8 || Values.Count is < 1 or > 16 || Filters.Count > 32)
             throw new ArgumentException("Use at most 8 row/column levels, 16 values and 32 report filters.");
         var width = range.Right - range.Left + 1;

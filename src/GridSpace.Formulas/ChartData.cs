@@ -2,9 +2,15 @@ using GridSpace.Core;
 
 namespace GridSpace.Formulas;
 
-public sealed record ChartSeriesData(string Name, string ValuesRange, double?[] Values);
+public sealed record ChartSeriesData(string Name, string ValuesRange, double?[] Values)
+{
+    public IReadOnlyList<string>? ReferenceAreas { get; init; }
+}
 public sealed record ChartData(string SourceSheet, string SourceRange, string CategoriesRange,
-    string[] Categories, double?[] XValues, IReadOnlyList<ChartSeriesData> Series);
+    string[] Categories, double?[] XValues, IReadOnlyList<ChartSeriesData> Series)
+{
+    public IReadOnlyList<string>? CategoryAreas { get; init; }
+}
 
 /// <summary>Resolves chart vectors once; rendering, hit testing and XLSX caches share the same data semantics.</summary>
 public static class ChartDataResolver
@@ -18,8 +24,9 @@ public static class ChartDataResolver
         foreach (var sheet in book.Sheets)
             if (sheet.PivotTables.FirstOrDefault(p => p.Id == chart.PivotTableId) is { ChartRange: { } range } pivot)
             {
+                if (pivot.NeedsLayoutRefresh || pivot.Cache is null) throw new InvalidOperationException("Refresh the PivotTable before charting its hierarchy.");
                 var area = CellRange.Parse(range);
-                var labels = Math.Max(1, pivot.Rows.Count);
+                var labels = pivot.Layout == PivotLayout.Compact ? 1 : Math.Max(1, pivot.Rows.Count);
                 var series = Enumerable.Range(area.Left + labels, area.Right - area.Left - labels + 1).Select((column, index) => new ChartSeries
                 {
                     Name = sheet.Get(new CellAddress(area.Top, column)).Input.TrimStart('\''),
@@ -49,8 +56,16 @@ public static class ChartDataResolver
         var definitions = spec.Series.Count > 0 ? spec.Series.Select(s => (s.Name, s.Values)).ToArray()
             : AutoSeries().ToArray();
         if (definitions.Length > 32) throw new InvalidOperationException("A chart supports 32 series. Choose a smaller range or explicit series.");
-        var positions = Enumerable.Range(0, categories.Length).Where(i => spec.PlotHiddenCells ||
-            !sheet.IsRowHidden(categories[i].Row) && !sheet.HiddenColumns.Contains(categories[i].Column)).ToArray();
+        var pivot = definition.PivotTableId is null ? null : sheet.PivotTables.First(p => p.Id == definition.PivotTableId);
+        var report = pivot is null ? null : PivotReportCache.Get(pivot);
+        bool CategoryRow(int index)
+        {
+            if (report is null) return true;
+            var row = categories[index].Row - pivot!.Anchor.Row - 1;
+            return row >= 0 && row < report.RowBands.Count && report.RowBands[row].IsChartCategory;
+        }
+        var positions = Enumerable.Range(0, categories.Length).Where(i => CategoryRow(i) && (spec.PlotHiddenCells ||
+            !sheet.IsRowHidden(categories[i].Row) && !sheet.HiddenColumns.Contains(categories[i].Column))).ToArray();
         var categoryValues = positions.Select(i => calculation.Evaluate(sheet, categories[i])).ToArray();
         var result = new List<ChartSeriesData>();
         var consumed = categories.Length;
@@ -67,18 +82,17 @@ public static class ChartDataResolver
                 var value = calculation.Evaluate(sheet, address);
                 return value.Kind == ValueKind.Number && double.IsFinite(value.Number) ? value.Number : (double?)null;
             }).ToArray();
-            result.Add(new(name, valuesRange, values));
+            result.Add(new(name, valuesRange, values) { ReferenceAreas = report is null ? null : Areas(addresses, positions) });
         }
         return new(sheet.Name, range.ToString(), categoriesRange,
             categoryValues.Select((v, index) =>
             {
                 if (definition.PivotTableId is null) return v.ToString();
-                var pivot = sheet.PivotTables.First(p => p.Id == definition.PivotTableId);
                 var address = categories[positions[index]];
-                return string.Join(" / ", Enumerable.Range(0, Math.Max(1, pivot.Rows.Count))
-                    .Select(l => calculation.Evaluate(sheet, new CellAddress(address.Row, address.Column + l)).ToString()));
+                return report!.RowBands[address.Row - pivot!.Anchor.Row - 1].Key.Label;
+
             }).ToArray(),
-            categoryValues.Select(v => v.Kind == ValueKind.Number ? v.Number : (double?)null).ToArray(), result);
+            categoryValues.Select(v => v.Kind == ValueKind.Number ? v.Number : (double?)null).ToArray(), result) { CategoryAreas = report is null ? null : Areas(categories, positions) };
 
         IEnumerable<(string Name, string Values)> AutoSeries()
         {
@@ -94,6 +108,23 @@ public static class ChartDataResolver
             }
         }
     }
+    private static IReadOnlyList<string> Areas(CellAddress[] addresses, int[] positions)
+    {
+        var result = new List<string>();
+        CellAddress? start = null, end = null;
+        foreach (var index in positions)
+        {
+            if (index >= addresses.Length) break;
+            var next = addresses[index];
+            if (end is { } previous && !(previous.Column == next.Column && previous.Row + 1 == next.Row
+                || previous.Row == next.Row && previous.Column + 1 == next.Column))
+            { result.Add(new CellRange(start!.Value, previous).ToString()); start = null; }
+            start ??= next; end = next;
+        }
+        if (start is { } first) result.Add(new CellRange(first, end!.Value).ToString());
+        return result;
+    }
+
 }
 
 /// <summary>Cache lifetime belongs to one owner. Drawing-only edits/gestures do not invalidate bound values.</summary>
