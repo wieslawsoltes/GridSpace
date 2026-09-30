@@ -20,7 +20,10 @@ public sealed partial class SpreadsheetRenderer
     /// <summary>Bounded metadata-only cache. No formula evaluation or worksheet scan is needed to show source grips.</summary>
     public IReadOnlyList<ChartSourceBinding> SourceBindings(SpreadsheetSession session)
     {
-        var chart = session.FindChart(SelectedChartId);
+        ChartSpec? chart = null;
+        if (SelectedChartId is not null)
+            foreach (var candidate in session.Sheet.Charts)
+                if (candidate.Id == SelectedChartId) { chart = candidate; break; }
         if (chart is not null && ChartSourcePreview?.Id == chart.Id) chart = ChartSourcePreview;
         if (ReferenceEquals(chart, _sourceBindingDocument) && _sourceBindingSheet == session.Sheet.Name &&
             _sourceBindingRevision == session.Book.StructureRevision) return _sourceBindings;

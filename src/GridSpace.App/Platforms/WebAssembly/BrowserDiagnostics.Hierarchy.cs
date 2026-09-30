@@ -17,6 +17,45 @@ internal sealed partial class BrowserDiagnostics
         json.WriteNumber("x", origin.X + bounds.X); json.WriteNumber("y", origin.Y + bounds.Y);
         json.WriteNumber("width", bounds.Width); json.WriteNumber("height", bounds.Height);
         json.WriteEndObject();
+        WriteChartSources(json, origin);
+    }
+
+    private void WriteChartSources(Utf8JsonWriter json, Point origin)
+    {
+        var surface = _workbench.Surface; var view = surface.Viewport;
+        json.WriteBoolean("chartSourceEditing", surface.IsChartSourceEditing);
+        json.WriteString("chartSourcePreviewRange", surface.ChartSourcePreviewRange);
+        json.WriteString("chartSourcePreviewError", surface.ChartSourcePreviewError);
+        json.WriteStartArray("chartSources");
+        var bindings = surface.Renderer.SourceBindings(_session);
+        foreach (var binding in bindings)
+        {
+            json.WriteStartObject();
+            json.WriteString("part", binding.Part.ToString()); json.WriteNumber("index", binding.SeriesIndex);
+            json.WriteString("range", binding.Range.ToString());
+            json.WriteStartArray("targets");
+            foreach (var pane in view.Panes())
+            {
+                if (!ChartSourceGeometry.Intersects(binding, pane)) continue;
+                foreach (var grip in ChartSourceGeometry.Grips(binding, view, pane)) WriteTarget(grip.Handle, grip.X, grip.Y, pane);
+                var b = view.RangeBounds(binding.Range, pane);
+                // Mid-edge move targets are provided only when they really win the public hit test.
+                WriteTarget(ChartSourceHandle.Move, b.X, (b.Y + b.Bottom) / 2, pane);
+                WriteTarget(ChartSourceHandle.Move, b.Right - .5, (b.Y + b.Bottom) / 2, pane);
+                WriteTarget(ChartSourceHandle.Move, (b.X + b.Right) / 2, b.Y, pane);
+                WriteTarget(ChartSourceHandle.Move, (b.X + b.Right) / 2, b.Bottom - .5, pane);
+            }
+            json.WriteEndArray(); json.WriteEndObject();
+            void WriteTarget(ChartSourceHandle handle, double x, double y, GridPane pane)
+            {
+                if (!pane.Clip.Contains(x, y) || ChartGeometry.HitTest(_session.Sheet.Charts, view, x, y, surface.SelectedChartId) is not null) return;
+                var hit = ChartSourceGeometry.HitTest(bindings, view, x, y);
+                if (hit?.Binding != binding || hit.Handle != handle) return;
+                json.WriteStartObject(); json.WriteString("handle", handle.ToString());
+                json.WriteNumber("x", origin.X + x); json.WriteNumber("y", origin.Y + y); json.WriteEndObject();
+            }
+        }
+        json.WriteEndArray();
     }
 
     private void WritePivotHierarchy(Utf8JsonWriter json, PivotTableSpec pivot)

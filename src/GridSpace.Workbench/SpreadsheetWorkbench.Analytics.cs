@@ -126,6 +126,8 @@ public sealed partial class SpreadsheetWorkbench
         if (name == "Chart Design") tabs.Add(new(name, [
             new("Chart", [new("chart-format", "Format Chart", OfficeIconKind.Chart, true), new("chart-title", "Edit Title", OfficeIconKind.Font, true),
                 new("chart-duplicate", "Duplicate", OfficeIconKind.Copy, true), new("chart-delete", "Delete", OfficeIconKind.Clear, true)]),
+            new("Data", [new("chart-source", "Edit Source", OfficeIconKind.Grid, true),
+                new("chart-customize", "Customize Series", OfficeIconKind.Chart, true)]),
             new("Layout", [new("chart-switch", "Switch Row/Column", OfficeIconKind.Grid, true), new("chart-labels", "Data Labels", OfficeIconKind.Font, true),
                 new("chart-legend", "Legend", OfficeIconKind.Grid, true), new("chart-front", "Bring to Front", OfficeIconKind.Plus, true), new("chart-back", "Send to Back", OfficeIconKind.Grid, true)])]));
         if (name == "PivotTable Analyze") tabs.Add(new(name, [
@@ -144,6 +146,15 @@ public sealed partial class SpreadsheetWorkbench
         {
             case "chart-format": ShowChartInspector(); break;
             case "chart-title": Surface.BeginChartTitleEdit(); break;
+            case "chart-source":
+                Surface.RevealChartSource();
+                ShowStatus("Drag a colored source border to move it, or a corner to resize it. Escape cancels.");
+                break;
+            case "chart-customize":
+                Session.CustomizeChartSource(ChartId());
+                Surface.RevealChartSource();
+                ShowStatus("Category and series vectors are editable separately; series names are now explicit captions.");
+                break;
             case "chart-delete": Session.DeleteChart(ChartId()); Surface.SelectChart(null); break;
             case "chart-duplicate": Surface.SelectChart(Session.DuplicateChart(ChartId())); DispatcherQueue.TryEnqueue(Surface.RevealChart); break;
             case "chart-switch": Session.UpdateChart(ChartId(), c => c with { SeriesInRows = !c.SeriesInRows, Series = [], Categories = null }); break;

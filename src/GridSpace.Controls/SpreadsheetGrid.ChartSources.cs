@@ -30,6 +30,20 @@ public sealed partial class SpreadsheetGrid
     public string? ChartSourcePreviewRange => _sourceDrag?.Range?.ToString();
     public string? ChartSourcePreviewError => _sourceDrag?.Error;
 
+    /// <summary>Reveal the chart's local source while retaining drawing selection and its inspector.</summary>
+    public void RevealChartSource()
+    {
+        if (Session is null || SelectedChart is not { } chart) throw new InvalidOperationException("Select a chart first.");
+        if (!CommitEdit()) return;
+        CancelChartGesture();
+        var bindings = ChartSourceEditing.Bindings(chart, Session.Sheet.Name);
+        if (bindings.Count == 0) throw new InvalidOperationException(chart.PivotTableId is not null
+            ? "PivotChart ranges belong to the report. Edit its PivotTable fields instead."
+            : "This source is unavailable or belongs to another worksheet. Use the source fields in Format Chart.");
+        Viewport.EnsureVisible(bindings[0].Range.Start);
+        FocusGrid(); Invalidate();
+    }
+
     private void EnsureChartSourceEvents()
     {
         if (_sourceEventsAttached) return;
@@ -82,6 +96,7 @@ public sealed partial class SpreadsheetGrid
         if (e.Pointer.PointerId != drag.PointerId) return true;
         drag.Latest = e.GetCurrentPoint(_canvas).Position;
         if (drag.Moved) UpdateChartSourcePreview();
+        if (!ReferenceEquals(_sourceDrag, drag)) return true; // A changed viewport/document cancelled the preview.
         var inside = drag.Latest.X >= GridViewport.RowHeaderWidth && drag.Latest.X < Viewport.Width &&
             drag.Latest.Y >= GridViewport.ColumnHeaderHeight && drag.Latest.Y < Viewport.Height;
         var range = drag.Range; var error = drag.Error;
