@@ -21,8 +21,7 @@ public static class ChartSourceGeometry
         var bounds = view.RangeBounds(range, pane);
         if (Owns(range.Start) && pane.Clip.Contains(bounds.X, bounds.Y))
             yield return new(ChartSourceHandle.Start, bounds.X, bounds.Y);
-        // A bottom/right border may lie on an exclusive pane edge; keep its target
-        // within that pane without creating a grip for a clipped, off-screen cell.
+        // Keep an exclusive bottom/right endpoint inside its owning pane.
         var x = bounds.Right - .5; var y = bounds.Bottom - .5;
         if (Owns(range.End) && pane.Clip.Contains(x, y))
             yield return new(ChartSourceHandle.End, x, y);
@@ -36,15 +35,23 @@ public static class ChartSourceGeometry
         foreach (var pane in view.Panes())
         {
             if (!pane.Clip.Contains(x, y)) continue;
-            // All actual endpoint grips outrank all borders, including overlapping vectors.
+            // Grips outrank borders. Choose the nearest actual endpoint when low zoom
+            // or narrow cells make their hit regions overlap; vector order breaks ties.
+            ChartSourceHit? nearest = null;
+            var distance = double.PositiveInfinity;
             for (var i = bindings.Count - 1; i >= 0; i--)
             {
                 var binding = bindings[i];
                 if (!Intersects(binding, pane)) continue;
                 foreach (var grip in Grips(binding, view, pane))
-                    if (Math.Abs(x - grip.X) <= HitTolerance && Math.Abs(y - grip.Y) <= HitTolerance)
-                        return new(binding, grip.Handle);
+                {
+                    var dx = Math.Abs(x - grip.X); var dy = Math.Abs(y - grip.Y);
+                    var squared = dx * dx + dy * dy;
+                    if (dx <= HitTolerance && dy <= HitTolerance && squared < distance)
+                    { distance = squared; nearest = new(binding, grip.Handle); }
+                }
             }
+            if (nearest is not null) return nearest;
             for (var i = bindings.Count - 1; i >= 0; i--)
             {
                 var binding = bindings[i];

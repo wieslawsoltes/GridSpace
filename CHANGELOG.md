@@ -1,11 +1,14 @@
 # Changelog
 
+## Unreleased
+
+Direct chart-source editing adds colored worksheet outlines, movable borders and cell-snapped corner resizing. Automatic tables remain automatic; explicit category/value vectors are independently editable. Chart Design provides Edit Source and Customize Series. Previews do not write cells or history; release creates one drawing delta, while Escape, outside release, stale definitions and invalid endpoints cancel safely. Shared pane geometry preserves frozen-pane hit testing. Warm source-binding metadata is cached without cell evaluation. See [chart source editing](docs/chart-source-editing.md) for the interaction contract, reusable APIs and remaining limits.
+
 ## 0.4.0-alpha.1
 
 Adds Compact/Outline/Tabular row-axis layouts, typed nested collapse state, source-accumulated top/bottom subtotals, direct worksheet expand/collapse gestures, cached display-row provenance, and exact linked-chart detail projection. Supports native persistence and bounded standard XLSX layout/row-item metadata with independent schema tests. Full column hierarchy and every Excel grouping/file behavior are not claimed.
 
 Multi-series editable charts, reusable chart geometry/rendering and inspector controls, typed worksheet-source PivotTables, field lists, immutable source caches, refresh/drill-through, linked charts and standard chart/pivot XLSX parts. Drawing deltas retain calculation/layout caches; repeated PivotChart binding is allocation-free. Adds structural/clipboard/ownership/schema/raster regressions, an analytics sample and benchmark, and physical-input acceptance specifications. Full Uno SDK WebAssembly/native builds and physical-input chart/PivotTable acceptance are integrated in CI. Pivot field dragging uses owned pointer capture, preview feedback and cancellation; Name-box navigation relinquishes drawing selection. Cached field/layout edits reuse the last-refresh source snapshot, and weakly owned field-value catalogs avoid repeated source scans. Explicit Refresh and undo/redo retain coherent report/cache epochs. See [charts and PivotTables](docs/charts-pivots.md).
-
 
 ## 0.3.0-alpha.1
 
