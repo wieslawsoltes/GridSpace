@@ -5,7 +5,7 @@ using GridSpace.Formulas;
 namespace GridSpace.Controls;
 
 /// <summary>Embeddable immediate-preview chart inspector. Hosts commit changes through their own transaction boundary.</summary>
-public sealed class ChartEditorControl : UserControl
+public sealed partial class ChartEditorControl : UserControl
 {
     private readonly StackPanel _root = new() { Spacing = 10, Padding = new Thickness(12) };
     private ChartSpec _document = new();
@@ -34,6 +34,8 @@ public sealed class ChartEditorControl : UserControl
         _loading = true;
         try
         {
+            VisualBuildCount++;
+            _textSynchronizers.Clear();
             _root.Children.Clear();
             var header = new Grid(); header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.Children.Add(OfficeTheme.Label("Format Chart", 19));
@@ -60,7 +62,7 @@ public sealed class ChartEditorControl : UserControl
             if (_document.Series.Count == 0)
             {
                 foreach (var series in _data?.Series ?? []) _root.Children.Add(OfficeTheme.Label(series.Name + "  ·  " + series.ValuesRange, 11));
-                _root.Children.Add(new OfficeButton("Customize series", () =>
+                _root.Children.Add(ActionButton("ChartCustomizeSeries", "Customize series", () =>
                 {
                     if (_data is null) return;
                     if (Change(c => c with { Categories = _data.CategoriesRange, Series = _data.Series.Select((s, i) =>
@@ -140,6 +142,12 @@ public sealed class ChartEditorControl : UserControl
     private void Text(string name, string initial, Func<string, bool> commit)
     {
         var field = OfficeTheme.Field(name); field.Text = initial; var last = initial;
+        _textSynchronizers[name] = value =>
+        {
+            var hasDraft = field.FocusState != FocusState.Unfocused && field.Text != last;
+            last = value;
+            if (!hasDraft && field.Text != value) field.Text = value;
+        };
         void Apply()
         {
             if (_loading || field.Text == last) return;
@@ -166,7 +174,23 @@ public sealed class ChartEditorControl : UserControl
     {
         var box = new CheckBox { Content = name, IsChecked = initial, FontSize = 12, MinHeight = 24 };
         AutomationProperties.SetAutomationId(box, name.Replace(" ", ""));
-        box.Checked += (_, _) => { if (!_loading) commit(true); }; box.Unchecked += (_, _) => { if (!_loading) commit(false); };
+        var committed = initial;
+        var reverting = false;
+        void Apply()
+        {
+            if (_loading || reverting) return;
+            var requested = box.IsChecked == true;
+            try
+            {
+                if (commit(requested)) { committed = requested; return; }
+            }
+            catch (Exception error) when (error is ArgumentException or InvalidOperationException or FormatException or OverflowException)
+            { ToolTipService.SetToolTip(box, error.Message); }
+            reverting = true;
+            try { box.IsChecked = committed; }
+            finally { reverting = false; }
+        }
+        box.Checked += (_, _) => Apply(); box.Unchecked += (_, _) => Apply();
         Target.Children.Add(box);
     }
     private bool Change(Func<ChartSpec, ChartSpec> edit)

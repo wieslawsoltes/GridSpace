@@ -132,10 +132,10 @@ test('native save keeps title and automatic-header link identities', async ({ pa
   const target = test.info().outputPath('linked-chart.gridspace'); await download.saveAs(target);
   const book = JSON.parse(await fs.readFile(target, 'utf8'));
   const sheet = (book.Sheets ?? book.sheets)[0];
-  const chart = (sheet.Charts ?? sheet.charts).find(c => (c.Id ?? c.id) === id);
-  const title = chart.TitleReference ?? chart.titleReference;
+  const savedChart = (sheet.Charts ?? sheet.charts).find(c => (c.Id ?? c.id) === id);
+  const title = savedChart.TitleReference ?? savedChart.titleReference;
   expect(title.Sheet ?? title.sheet).toBe('Revenue'); expect(title.Cell ?? title.cell).toBe('B2');
-  const series = (chart.Series ?? chart.series)[0];
+  const series = (savedChart.Series ?? savedChart.series)[0];
   const name = series.NameReference ?? series.nameReference;
   expect(name.Sheet ?? name.sheet).toBe('Revenue'); expect(name.Cell ?? name.cell).toBe('C5');
 });

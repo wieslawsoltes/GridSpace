@@ -4,6 +4,10 @@
 
 Direct chart-source editing adds colored worksheet outlines, movable borders and cell-snapped corner resizing. Automatic tables remain automatic; explicit category/value vectors are independently editable. Chart Design provides Edit Source and Customize Series. Previews do not write cells or history; release creates one drawing delta, while Escape, outside release, stale definitions and invalid endpoints cancel safely. Shared pane geometry preserves frozen-pane hit testing. Warm source-binding metadata is cached without cell evaluation. See [chart source editing](docs/chart-source-editing.md) for the interaction contract, reusable APIs and remaining limits.
 
+Adds direct chart source-outline editing with cell-snapped move/resize previews, independent category/value/header grips and retained single-cell vector orientation. Titles, both axis titles and series names support live formatted single-cell references, structural identity maintenance and standard XLSX text-reference caches. Caption-only rebindings preserve numeric arrays.
+
+Fixes analytics-inspector synchronization: coalesced deferred updates, a geometry-only control-preserving path, correct copied-PivotTable ownership and rejected-checkbox rollback. Adds physical-input regressions and fixes a shadowed helper in the chart text-link download test. See [live chart text](docs/chart-text-links.md).
+
 ## 0.4.0-alpha.1
 
 Adds Compact/Outline/Tabular row-axis layouts, typed nested collapse state, source-accumulated top/bottom subtotals, direct worksheet expand/collapse gestures, cached display-row provenance, and exact linked-chart detail projection. Supports native persistence and bounded standard XLSX layout/row-item metadata with independent schema tests. Full column hierarchy and every Excel grouping/file behavior are not claimed.

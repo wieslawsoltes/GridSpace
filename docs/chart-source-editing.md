@@ -6,7 +6,7 @@ Select an ordinary chart, then choose **Chart Design → Edit Source**. The work
 
 An automatic chart shows its entire data table in purple. Resizing that table preserves automatic binding: adding or removing data rows changes points, while adding or removing series columns changes automatic series. The transposed mode uses the corresponding rows/columns. Existing header and orientation settings are preserved.
 
-**Chart Design → Customize Series** changes automatic bindings into explicit category and value vectors as one undoable command. Categories appear in orange and each value vector uses a series color. Vectors move independently, retain their original row or column orientation when resized, and do not overwrite other bindings. Current series names become explicit captions, not live cell-linked names; use Undo or the inspector's automatic-series option to restore automatic naming/binding.
+**Chart Design → Customize Series** changes automatic bindings into explicit category and value vectors as one undoable command. Categories appear in orange and each value vector uses a series color. Vectors move independently, retain their original row or column orientation when resized, and do not overwrite other bindings. Automatic header names remain live cell-linked names when customized; independent single-cell name grips retarget those links without changing value ranges. See [live chart text](chart-text-links.md).
 
 Shrinking a vector to one cell retains an orientation hint so a subsequent drag extends along the same axis. This survives undo/redo, native save/load and GridSpace's supported XLSX roundtrip. A larger vector always derives its axis from the actual range, overriding old hints. The hint is native editing metadata carried by the existing GridSpace XLSX extension: a plain external one-cell chart reference does not itself specify an axis.
 
@@ -26,7 +26,7 @@ Edge scrolling operates while a source drag is active. It uses the same sparse a
 
 PivotChart source ranges are owned by the report and have no worksheet source grips. Change their fields, filters or expanded groups in **PivotTable Fields** instead. The new Customize Series command refuses to detach PivotCharts.
 
-A chart whose data comes from another sheet does not show those references on the wrong worksheet. Its source remains editable through the inspector's existing address controls. Cross-sheet source picking while retaining a chart on another sheet, arbitrary discontiguous range picking and live cell-linked series names are not implemented by this increment.
+A chart whose data comes from another sheet does not show those references on the wrong worksheet. Its source remains editable through the inspector's existing address controls. Cross-sheet source picking while retaining a chart on another sheet and arbitrary discontiguous range picking are not implemented. Supported single-cell text links can reference another worksheet through the inspector.
 
 ## Performance and persistence
 

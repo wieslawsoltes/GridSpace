@@ -48,7 +48,8 @@ public sealed partial class SpreadsheetWorkbench
             finally
             {
                 _applyingInspector = false;
-                DispatcherQueue.TryEnqueue(() => { UpdateAnalytics(); Surface.Invalidate(); });
+                QueueChartInspectorRefresh();
+                Surface.Invalidate();
             }
         };
         _analytics.Child = _chartEditor; _analytics.Visibility = Visibility.Visible;
@@ -58,7 +59,19 @@ public sealed partial class SpreadsheetWorkbench
 
     private void BindChartInspector(ChartSpec chart)
     {
+        if (_chartEditor is { } editor && editor.BoundChartId == chart.Id &&
+            ReferenceEquals(_inspectedChartBook, Session.Book) &&
+            ReferenceEquals(_inspectedChartSheet, Session.Sheet) &&
+            _inspectedChartRevision == Session.Book.Revision &&
+            _inspectedChart is { } previous && IsGeometryOnlyChange(previous, chart))
+        {
+            editor.SynchronizeGeometry(chart);
+            _inspectedChart = chart;
+            return;
+        }
+
         _inspectedChart = chart; _inspectedChartRevision = Session.Book.Revision;
+        _inspectedChartBook = Session.Book; _inspectedChartSheet = Session.Sheet;
         ChartData? data = null;
         try { data = Surface.Renderer.Charts.Data.Get(Session.Book, Session.Sheet, chart, Session.Calculation); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or FormatException) { ShowStatus(error.Message, true); }
@@ -100,6 +113,7 @@ public sealed partial class SpreadsheetWorkbench
     private void HideAnalytics()
     {
         _analytics.Visibility = Visibility.Collapsed; _analytics.Child = null;
+        _inspectedChartBook = null; _inspectedChartSheet = null;
         _chartEditor = null; _pivotEditor = null; _inspectedChart = null; _inspectedPivotId = null; _inspectedPivot = null;
         ContextTab(null);
     }
@@ -111,10 +125,13 @@ public sealed partial class SpreadsheetWorkbench
         if (activePivot?.Id != _lastSelectedPivot)
         {
             _lastSelectedPivot = activePivot?.Id;
-            if (activePivot is not null && _pivotEditor is null) ShowPivotInspector(activePivot);
+            if (activePivot is not null && (_pivotEditor is null || _inspectedPivotId != activePivot.Id))
+                ShowPivotInspector(activePivot);
         }
-        if (_chartEditor is not null && Surface.SelectedChart is { } chart && (!ReferenceEquals(chart, _inspectedChart) || _inspectedChartRevision != Session.Book.Revision))
-            BindChartInspector(chart);
+        if (_chartEditor is not null && Surface.SelectedChart is { } chart &&
+            (!ReferenceEquals(chart, _inspectedChart) || _inspectedChartRevision != Session.Book.Revision ||
+             !ReferenceEquals(_inspectedChartBook, Session.Book) || !ReferenceEquals(_inspectedChartSheet, Session.Sheet)))
+            QueueChartInspectorRefresh();
         if (_pivotEditor is not null && _inspectedPivotId is { } id)
         {
             var pivot = Session.Sheet.PivotTables.FirstOrDefault(p => p.Id == id);
