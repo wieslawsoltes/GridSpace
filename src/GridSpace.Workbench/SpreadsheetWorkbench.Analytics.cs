@@ -71,6 +71,7 @@ public sealed partial class SpreadsheetWorkbench
         _pivotEditor.RefreshRequested += () => RunCommand("pivot-refresh");
         _pivotEditor.ChartRequested += () => RunCommand("pivot-chart");
         _pivotEditor.RemoveRequested += () => RunCommand("pivot-remove");
+        _pivotEditor.ExpandGroupsRequested += expanded => RunCommand(expanded ? "pivot-expand-all" : "pivot-collapse-all");
         _pivotEditor.GetFieldValues = field =>
         {
             var spec = Session.Sheet.PivotTables.First(p => p.Id == _inspectedPivotId);
@@ -129,7 +130,9 @@ public sealed partial class SpreadsheetWorkbench
                 new("chart-legend", "Legend", OfficeIconKind.Grid, true), new("chart-front", "Bring to Front", OfficeIconKind.Plus, true), new("chart-back", "Send to Back", OfficeIconKind.Grid, true)])]));
         if (name == "PivotTable Analyze") tabs.Add(new(name, [
             new("PivotTable", [new("pivot-fields", "Field List", OfficeIconKind.Grid, true), new("pivot-refresh", "Refresh", OfficeIconKind.Redo, true),
-                new("pivot-chart", "PivotChart", OfficeIconKind.Chart, true), new("pivot-details", "Show Details", OfficeIconKind.Find, true), new("pivot-remove", "Remove", OfficeIconKind.Clear, true)])]));
+                new("pivot-chart", "PivotChart", OfficeIconKind.Chart, true), new("pivot-details", "Show Details", OfficeIconKind.Find, true), new("pivot-remove", "Remove", OfficeIconKind.Clear, true)]),
+            new("Hierarchy", [new("pivot-toggle", "Expand/Collapse", OfficeIconKind.Plus, true),
+                new("pivot-expand-all", "Expand All", OfficeIconKind.Plus, true), new("pivot-collapse-all", "Collapse All", OfficeIconKind.Grid, true)])]));
         _ribbon.SetTabs(tabs); _ribbon.SelectTab(name ?? "Home");
     }
 
@@ -155,6 +158,9 @@ public sealed partial class SpreadsheetWorkbench
             case "pivot-chart": Surface.SelectChart(Session.AddPivotChart(PivotId())); DispatcherQueue.TryEnqueue(Surface.RevealChart); break;
             case "pivot-details": Session.DrillDownPivot(Session.ActiveCell); HideAnalytics(); break;
             case "pivot-remove": Session.RemovePivotTable(PivotId()); HideAnalytics(); break;
+            case "pivot-toggle": Surface.ToggleSelectedPivotGroup(); Surface.FocusGrid(); break;
+            case "pivot-expand-all": Session.SetPivotGroupsExpanded(PivotId(), true); Surface.FocusGrid(); break;
+            case "pivot-collapse-all": Session.SetPivotGroupsExpanded(PivotId(), false); Surface.FocusGrid(); break;
             default:
                 if (!id.StartsWith("chart-", StringComparison.Ordinal) || !Enum.TryParse<ChartKind>(id[6..], true, out var kind)) return false;
                 var range = Session.DataRange();

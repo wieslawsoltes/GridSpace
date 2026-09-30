@@ -84,16 +84,16 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
         _vertical.ValueChanged += value => ScrollTo(Viewport.ScrollX, value);
         _canvas.PointerPressed += Pressed; _canvas.PointerMoved += Moved; _canvas.PointerReleased += Released;
         _canvas.PointerCanceled += (_, _) => CancelGesture();
-        _canvas.PointerCaptureLost += (_, _) => { if (_gesture != Gesture.None || _chartDragStart is not null) CancelGesture(); };
+        _canvas.PointerCaptureLost += (_, _) => { if (_gesture != Gesture.None || _chartDragStart is not null || _pivotPress is not null) CancelGesture(); };
         _canvas.PointerWheelChanged += Wheel;
         _canvas.DoubleTapped += (_, e) =>
         {
             if (Session is null) return;
             var p = e.GetPosition(_canvas);
-            if (TryChartDoubleTap(p)) { e.Handled = true; return; }
+            if (TryChartDoubleTap(p) || TryPivotDoubleTap(p)) { e.Handled = true; return; }
             var hit = Viewport.HitTest(p.X, p.Y);
             if (hit.Kind == GridHitKind.Cell && Session.PivotAt(new CellAddress(hit.Row, hit.Column)) is { } pivot
-                && hit.Row > pivot.Anchor.Row && hit.Column >= pivot.Anchor.Column + Math.Max(1, pivot.Rows.Count))
+                && hit.Row > pivot.Anchor.Row && hit.Column >= pivot.Anchor.Column + (pivot.Layout == PivotLayout.Compact ? 1 : Math.Max(1, pivot.Rows.Count)))
             {
                 PivotDrillDownRequested?.Invoke(new CellAddress(hit.Row, hit.Column)); e.Handled = true; return;
             }
@@ -135,7 +135,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     private void Pressed(object sender, PointerRoutedEventArgs e)
     {
         if (Session is null || !CommitEdit()) return;
-        if (TryChartPressed(e)) return;
+        if (TryChartPressed(e) || TryPivotPressed(e)) return;
         SelectChart(null);
         FocusGrid(); var point = e.GetCurrentPoint(_canvas); var p = point.Position; var hit = Viewport.HitTest(p.X, p.Y);
         if (hit.Kind == GridHitKind.None) return;
@@ -169,7 +169,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     }
     private void Moved(object sender, PointerRoutedEventArgs e)
     {
-        if (TryChartMoved(e)) return;
+        if (TryChartMoved(e) || TryPivotMoved(e)) return;
         if (Session is null || _gesture == Gesture.None) return;
         var p = e.GetCurrentPoint(_canvas).Position;
         if (_gesture is Gesture.ColumnSize or Gesture.RowSize)
@@ -200,7 +200,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     }
     private void Released(object sender, PointerRoutedEventArgs e)
     {
-        if (TryChartReleased(e)) return;
+        if (TryChartReleased(e) || TryPivotReleased(e)) return;
         if (Session is null) return;
         var gesture = _gesture; _gesture = Gesture.None;
         if (gesture == Gesture.ColumnSize) Run(() => Session.SetColumnWidth(_resizeIndex, _resizeValue));
@@ -210,6 +210,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     }
     private void CancelGesture()
     {
+        CancelPivotGesture();
         CancelChartGesture();
         var restore = _gesture == Gesture.Fill; _gesture = Gesture.None; _canvas.ReleasePointerCaptures();
         if (restore && Session is not null) Session.Select(_source); _canvas.Invalidate();
@@ -300,7 +301,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
     private void HandleKey(object sender, KeyRoutedEventArgs e)
     {
         if (Session is null || IsEditing || e.OriginalSource is TextBox) return;
-        try { if (HandleChartKey(e)) return; }
+        try { if (HandleChartKey(e) || HandlePivotKey(e)) return; }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException) { Error?.Invoke(error.Message); e.Handled = true; return; }
         var control = Down(VirtualKey.Control) || Down(VirtualKey.LeftWindows) || Down(VirtualKey.RightWindows);
         var shift = Down(VirtualKey.Shift);

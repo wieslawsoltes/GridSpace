@@ -17,6 +17,7 @@ public sealed partial class PivotFieldListControl : UserControl
     public event Action? ChartRequested;
     public event Action? CloseRequested;
     public event Action? RemoveRequested;
+    public event Action<bool>? ExpandGroupsRequested;
 
     public PivotFieldListControl()
     {
@@ -64,6 +65,18 @@ public sealed partial class PivotFieldListControl : UserControl
                 _root.Children.Add(message);
                 return;
             }
+
+            var layout = OfficeForm.EnumChoice("Pivot report layout", _document.Layout);
+            layout.SelectionChanged += (_, _) => Change(p => p with { Layout = OfficeForm.Value<PivotLayout>(layout) });
+            _root.Children.Add(OfficeForm.Field("Report layout", layout));
+            var subtotal = OfficeForm.EnumChoice("Pivot subtotals", _document.Subtotals);
+            subtotal.SelectionChanged += (_, _) => Change(p => p with { Subtotals = OfficeForm.Value<PivotSubtotals>(subtotal) });
+            _root.Children.Add(OfficeForm.Field("Subtotals", subtotal));
+            var outline = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            outline.Children.Add(Button("Pivot Expand All", "Expand all", () => ExpandGroupsRequested?.Invoke(true)));
+            outline.Children.Add(Button("Pivot Collapse All", "Collapse all", () => ExpandGroupsRequested?.Invoke(false)));
+            _root.Children.Add(outline);
+            Check("Pivot repeat labels", _document.RepeatRowLabels, value => Change(p => p with { RepeatRowLabels = value }));
 
             var addArea = OfficeForm.Choice("Pivot add area", new[] { "Rows", "Columns", "Values", "Filters" }.Select(s => new OfficeChoice<string>(s, s)), "Rows");
             _root.Children.Add(OfficeForm.Field("Add selected field to", addArea));
@@ -243,7 +256,7 @@ public sealed partial class PivotFieldListControl : UserControl
         if (_loading) return;
         try
         {
-            var next = edit(_document.CloneDocument()); next.Validate();
+            var next = edit(_document.CloneDocument()); next.NormalizeCollapseState(); next.Validate();
             if (CommitChanges?.Invoke(next) != true) { Build(); return; }
             _document = next; Build();
         }

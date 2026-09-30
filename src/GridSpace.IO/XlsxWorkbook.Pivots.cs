@@ -18,7 +18,7 @@ public static partial class XlsxWorkbook
         for (var i = 0; i < sheet.PivotTables.Count; i++)
         {
             var spec = sheet.PivotTables[i]; spec.Validate();
-            if (spec.Cache is null || spec.OutputRange is null)
+            if (spec.Cache is null || spec.OutputRange is null || spec.NeedsLayoutRefresh)
                 throw new InvalidOperationException("Refresh " + spec.Name + " before exporting its PivotTable cache.");
             var source = PivotEngine.FromCache(spec.Cache);
             var report = PivotEngine.Build(source, spec);
@@ -82,8 +82,9 @@ public static partial class XlsxWorkbook
     {
         var root = E("pivotTableDefinition", new XAttribute("name", spec.Name), new XAttribute("cacheId", cacheId),
             new XAttribute("dataCaption", "Values"), new XAttribute("rowGrandTotals", spec.RowGrandTotals ? 1 : 0),
-            new XAttribute("colGrandTotals", spec.ColumnGrandTotals ? 1 : 0), new XAttribute("compact", 0),
-            new XAttribute("compactData", 0), new XAttribute("outline", 0), new XAttribute("outlineData", 0),
+            new XAttribute("colGrandTotals", spec.ColumnGrandTotals ? 1 : 0), new XAttribute("compact", spec.Layout == PivotLayout.Compact ? 1 : 0),
+            new XAttribute("compactData", spec.Layout == PivotLayout.Compact ? 1 : 0), new XAttribute("outline", spec.Layout != PivotLayout.Tabular ? 1 : 0),
+            new XAttribute("outlineData", spec.Layout != PivotLayout.Tabular ? 1 : 0),
             new XAttribute("gridDropZones", 1), new XAttribute("dataOnRows", 0), new XAttribute("updatedVersion", 6),
             new XAttribute("minRefreshableVersion", 3), new XAttribute("createdVersion", 6),
             E("location", new XAttribute("ref", spec.OutputRange!), new XAttribute("firstHeaderRow", 0),
@@ -96,12 +97,15 @@ public static partial class XlsxWorkbook
             var selected = filter?.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var definition = E("pivotField", axis is null ? null : new XAttribute("axis", axis),
                 new XAttribute("dataField", spec.Values.Any(v => v.Field == field) ? 1 : 0),
-                new XAttribute("defaultSubtotal", 0), new XAttribute("showAll", 0), new XAttribute("compact", 0), new XAttribute("outline", 0),
+                new XAttribute("defaultSubtotal", spec.Rows.IndexOf(field) >= 0 && spec.Rows.IndexOf(field) < spec.Rows.Count - 1 && spec.Subtotals != PivotSubtotals.None ? 1 : 0),
+                new XAttribute("subtotalTop", spec.Subtotals == PivotSubtotals.Top ? 1 : 0), new XAttribute("showAll", 0),
+                new XAttribute("compact", spec.Layout == PivotLayout.Compact ? 1 : 0), new XAttribute("outline", spec.Layout != PivotLayout.Tabular ? 1 : 0),
                 new XAttribute("sortType", spec.SortAscending ? "ascending" : "descending"),
                 filter is not null ? new XAttribute("multipleItemSelectionAllowed", 1) : null);
             if (axis is not null)
                 definition.Add(E("items", new XAttribute("count", shared[field].Count), shared[field].Select((value, index) =>
                     E("item", new XAttribute("x", index), selected is not null && !selected.Contains(value.ToString()) ? new XAttribute("h", 1) : null))));
+            WritePivotFieldHierarchy(spec, field, shared[field], definition);
             fields.Add(definition);
         }
         root.Add(fields);
@@ -136,7 +140,7 @@ public static partial class XlsxWorkbook
         if (spec.Rows.Count > 0)
         {
             root.Add(E("rowFields", new XAttribute("count", spec.Rows.Count), spec.Rows.Select(f => E("field", new XAttribute("x", f)))));
-            root.Add(Items("rowItems", report.RowKeys, spec.Rows, spec.ColumnGrandTotals, false));
+            root.Add(WritePivotRowItems(report, Index));
         }
         if (spec.Columns.Count > 0 || spec.Values.Count > 1)
         {
@@ -255,7 +259,8 @@ public static partial class XlsxWorkbook
                             .Select(item => Int(item.Attribute("x"), -1)).Where(i => i >= 0 && i < shared[field].Length).Select(i => shared[field][i].ToString()).ToArray();
                         spec.Filters.Add(new() { Field = field, Values = chosen });
                     }
-                    warnings.Add("PivotTable " + spec.Name + " retains its saved cells. Refresh converts its layout to GridSpace's tabular report; subtotals and advanced layout options are not reproduced.");
+                    ReadPivotHierarchy(definition, fields, shared, source, spec);
+                    warnings.Add("PivotTable " + spec.Name + " retains its saved cells. Refresh converts supported layout/subtotal options to GridSpace's report; advanced per-field layout settings may differ.");
                 }
                 spec.SourceSheet = (string)sourceElement.Attribute("sheet")!;
                 spec.SourceRange = sourceRange.ToString(); spec.Destination = output.Normalized.Start.ToString(); spec.OutputRange = output.ToString();

@@ -10,6 +10,7 @@ public sealed record ChartData(string SourceSheet, string SourceRange, string Ca
     string[] Categories, double?[] XValues, IReadOnlyList<ChartSeriesData> Series)
 {
     public IReadOnlyList<string>? CategoryAreas { get; init; }
+    public bool HasCompositeCategories { get; init; }
 }
 
 /// <summary>Resolves chart vectors once; rendering, hit testing and XLSX caches share the same data semantics.</summary>
@@ -92,7 +93,7 @@ public static class ChartDataResolver
                 return report!.RowBands[address.Row - pivot!.Anchor.Row - 1].Key.Label;
 
             }).ToArray(),
-            categoryValues.Select(v => v.Kind == ValueKind.Number ? v.Number : (double?)null).ToArray(), result) { CategoryAreas = report is null ? null : Areas(categories, positions) };
+            categoryValues.Select(v => v.Kind == ValueKind.Number ? v.Number : (double?)null).ToArray(), result) { CategoryAreas = report is null ? null : Areas(categories, positions), HasCompositeCategories = pivot?.Rows.Count > 1 };
 
         IEnumerable<(string Name, string Values)> AutoSeries()
         {

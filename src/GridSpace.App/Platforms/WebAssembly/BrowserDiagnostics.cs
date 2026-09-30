@@ -15,7 +15,7 @@ using Windows.Foundation;
 namespace GridSpace.App;
 
 /// <summary>Opt-in read-only model and hit-target snapshots. Tests still send actual keyboard and pointer events.</summary>
-internal sealed class BrowserDiagnostics : IDisposable
+internal sealed partial class BrowserDiagnostics : IDisposable
 {
     private readonly SpreadsheetSession _session;
     private readonly SpreadsheetWorkbench _workbench;
@@ -123,9 +123,11 @@ internal sealed class BrowserDiagnostics : IDisposable
                 json.WriteString("output", pivot.OutputRange); json.WriteNumber("rows", pivot.Rows.Count);
                 json.WriteNumber("columns", pivot.Columns.Count); json.WriteNumber("values", pivot.Values.Count);
                 json.WriteNumber("records", pivot.LastSourceRowCount);
+                WritePivotHierarchy(json, pivot);
                 json.WriteEndObject();
             }
             json.WriteEndArray();
+            WriteActiveCellGeometry(json);
             json.WriteStartObject("controls");
             foreach (var (name, element) in Controls())
             {
