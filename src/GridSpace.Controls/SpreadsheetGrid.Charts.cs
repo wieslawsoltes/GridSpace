@@ -6,6 +6,8 @@ namespace GridSpace.Controls;
 public sealed partial class SpreadsheetGrid
 {
     private ChartSpec? _chartDragStart;
+    private ChartSpec? _chartDragOriginal;
+    private uint? _chartPointerId;
     private GridRect _chartDragBounds;
     private ChartHitPart _chartDragPart;
     private Point _chartDragPointer;
@@ -18,6 +20,7 @@ public sealed partial class SpreadsheetGrid
 
     public void SelectChart(string? id)
     {
+        EnsureChartSourceEvents();
         id = Session?.FindChart(id)?.Id;
         if (id == SelectedChartId) return;
         CancelChartTitle(); CancelChartGesture();
@@ -50,49 +53,64 @@ public sealed partial class SpreadsheetGrid
 
     private bool TryChartPressed(PointerRoutedEventArgs e)
     {
+        if (_chartDragStart is not null || _sourceDrag is not null) { e.Handled = true; return true; }
         if (Session is null) return false;
         var point = e.GetCurrentPoint(_canvas);
         var hit = ChartGeometry.HitTest(Session.Sheet.Charts, Viewport, point.Position.X, point.Position.Y, SelectedChartId);
-        if (hit is null) return false;
+        if (hit is null) return TryChartSourcePressed(e);
         SelectChart(hit.Value.Id);
         if (point.Properties.IsRightButtonPressed) { CommandRequested?.Invoke("chart-format"); e.Handled = true; return true; }
+        if (!point.Properties.IsLeftButtonPressed) { e.Handled = true; return true; }
         FocusGrid();
+        _chartDragOriginal = SelectedChart;
         _chartDragStart = SelectedChart!.CloneDocument();
         _chartDragBounds = ChartGeometry.SheetBounds(_chartDragStart, Viewport);
         _chartDragPart = hit.Value.Part;
         _chartDragPointer = point.Position;
-        _canvas.CapturePointer(e.Pointer); e.Handled = true;
+        _chartPointerId = e.Pointer.PointerId;
+        if (!_canvas.CapturePointer(e.Pointer)) CancelChartGesture();
+        e.Handled = true;
         return true;
     }
 
     private bool TryChartMoved(PointerRoutedEventArgs e)
     {
+        if (_sourceDrag is not null) return TryChartSourceMoved(e);
         if (_chartDragStart is null) return false;
+        e.Handled = true;
+        if (_chartPointerId != e.Pointer.PointerId) return true;
+        if (!ReferenceEquals(SelectedChart, _chartDragOriginal)) { CancelChartGesture(); return true; }
         var point = e.GetCurrentPoint(_canvas).Position;
         var bounds = ChartGeometry.Transform(_chartDragBounds, _chartDragPart,
             (point.X - _chartDragPointer.X) / Viewport.Zoom, (point.Y - _chartDragPointer.Y) / Viewport.Zoom,
             e.KeyModifiers.HasFlag(VirtualKeyModifiers.Shift));
         Renderer.ChartPreview = ChartGeometry.Place(_chartDragStart, bounds, Viewport);
-        _canvas.Invalidate(); ViewChanged?.Invoke(); e.Handled = true;
+        _canvas.Invalidate(); ViewChanged?.Invoke();
         return true;
     }
 
     private bool TryChartReleased(PointerRoutedEventArgs e)
     {
+        if (_sourceDrag is not null) return TryChartSourceReleased(e);
         if (_chartDragStart is null) return false;
+        e.Handled = true;
+        if (_chartPointerId != e.Pointer.PointerId) return true;
         var preview = Renderer.ChartPreview; var kind = _chartDragPart;
-        _chartDragStart = null; Renderer.ChartPreview = null;
+        var valid = ReferenceEquals(SelectedChart, _chartDragOriginal);
+        _chartDragStart = null; _chartDragOriginal = null; _chartPointerId = null; Renderer.ChartPreview = null;
         _canvas.ReleasePointerCaptures();
-        if (preview is not null && Session is not null)
+        if (valid && preview is not null && Session is not null)
             Run(() => Session.UpdateChart(preview.Id, _ => preview, kind is ChartHitPart.Body or ChartHitPart.Title ? "Move chart" : "Resize chart"));
-        Invalidate(); e.Handled = true;
+        Invalidate();
         return true;
     }
 
     private void CancelChartGesture()
     {
+        CancelChartSourceGesture();
         if (_chartDragStart is null) return;
-        _chartDragStart = null; Renderer.ChartPreview = null; _canvas.ReleasePointerCaptures(); _canvas.Invalidate();
+        _chartDragStart = null; _chartDragOriginal = null; _chartPointerId = null;
+        Renderer.ChartPreview = null; _canvas.ReleasePointerCaptures(); _canvas.Invalidate();
     }
 
     private bool TryChartDoubleTap(Point point)
@@ -164,6 +182,11 @@ public sealed partial class SpreadsheetGrid
 
     private bool HandleChartKey(KeyRoutedEventArgs e)
     {
+        if (_sourceDrag is not null)
+        {
+            if (e.Key == VirtualKey.Escape) CancelChartSourceGesture();
+            e.Handled = true; return true;
+        }
         if (SelectedChart is not { } chart || Session is null) return false;
         var control = Down(VirtualKey.Control) || Down(VirtualKey.LeftWindows) || Down(VirtualKey.RightWindows);
         if (e.Key == VirtualKey.Escape) { if (_chartDragStart is not null) CancelChartGesture(); else SelectChart(null); }
