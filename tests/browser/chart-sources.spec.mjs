@@ -90,7 +90,7 @@ test('moves a whole source border without changing its dimensions', async ({ pag
 
 test('customizes series and resizes one value vector without changing its neighbors', async ({ page }) => {
   await sourceChart(page); await click(page, 'Command-chart-customize');
-  await expect.poll(async () => (await state(page)).chartSources?.length).toBe(5);
+  await expect.poll(async () => (await state(page)).chartSources?.length).toBe(9);
   const before = await state(page);
   await start(page, await grip(page, 'SeriesValues', 0), 30, 48);
   await page.mouse.up();

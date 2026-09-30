@@ -53,6 +53,20 @@ Observe("chart-update-and-cached-data", 20, 20, () =>
     session.UpdateChart(ordinary.Id, c => c with { OffsetX = ++offset });
     _ = cache.Get(book, session.Sheet, session.FindChart(ordinary.Id)!, session.Calculation);
 });
+session.CustomizeChartSource(ordinary.Id);
+var linked = session.FindChart(ordinary.Id)!;
+var linkedData = cache.Get(book, session.Sheet, linked, session.Calculation);
+var linkCounter = 0;
+Observe("chart-caption-rebind-retaining-numeric-vectors", 20, 20, () =>
+{
+    session.SetChartTextLink(ordinary.Id, ChartSourcePart.SeriesName,
+        new ChartTextReference("Facts", ++linkCounter % 2 == 0 ? "C1" : "D1"), 0);
+    var data = cache.Get(book, session.Sheet, session.FindChart(ordinary.Id)!, session.Calculation);
+    if (!ReferenceEquals(data.Series[0].Values, linkedData.Series[0].Values))
+        throw new InvalidOperationException("A caption-only edit rebuilt numeric vectors.");
+});
+linked = session.FindChart(ordinary.Id)!;
+Observe("cached-linked-chart-text-and-values", 20, 100, () => _ = cache.Get(book, session.Sheet, linked, session.Calculation));
 Observe("xlsx-chart-and-pivot-cache-export", 5, 1, () => _ = XlsxWorkbook.Write(book));
 // Same captured records, now presented as a two-level row hierarchy.
 session.SwitchSheet(1);
@@ -76,7 +90,7 @@ Observe("cached-pivot-hierarchy-presentation", 20, 100, () => _ = PivotReportCac
 Console.WriteLine(JsonSerializer.Serialize(new
 {
     schema = 1, runtime = RuntimeInformation.FrameworkDescription, os = RuntimeInformation.OSDescription,
-    rows = count, storedSourceCells = (count + 1) * 4, chartDataResolutions = cache.ResolveCount, observations = results
+    rows = count, storedSourceCells = (count + 1) * 4, chartDataResolutions = cache.ResolveCount, chartTextRefreshes = cache.TextRefreshCount, observations = results
 }, new JsonSerializerOptions { WriteIndented = true }));
 void Observe(string name, int samples, int batch, Action action)
 {

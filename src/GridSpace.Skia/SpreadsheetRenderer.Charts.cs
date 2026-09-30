@@ -44,6 +44,8 @@ public sealed partial class SpreadsheetRenderer
             {
                 ChartSourcePart.DataRange => "#7030A0",
                 ChartSourcePart.Categories => "#D66A00",
+                ChartSourcePart.Title => "#008575",
+                ChartSourcePart.CategoryAxisTitle or ChartSourcePart.ValueAxisTitle => "#8764B8",
                 _ => GridSpace.Formulas.ChartDataResolver.Palette[binding.SeriesIndex % GridSpace.Formulas.ChartDataResolver.Palette.Length]
             });
             Fill(canvas, Rect(bounds), color.WithAlpha(13));

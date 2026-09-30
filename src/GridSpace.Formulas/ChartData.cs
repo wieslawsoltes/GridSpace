@@ -5,12 +5,14 @@ namespace GridSpace.Formulas;
 public sealed record ChartSeriesData(string Name, string ValuesRange, double?[] Values)
 {
     public IReadOnlyList<string>? ReferenceAreas { get; init; }
+    public ChartTextReference? NameReference { get; init; }
 }
 public sealed record ChartData(string SourceSheet, string SourceRange, string CategoriesRange,
     string[] Categories, double?[] XValues, IReadOnlyList<ChartSeriesData> Series)
 {
     public IReadOnlyList<string>? CategoryAreas { get; init; }
     public bool HasCompositeCategories { get; init; }
+    public ChartTextSnapshot Text { get; init; } = ChartTextSnapshot.Empty;
 }
 
 /// <summary>Resolves chart vectors once; rendering, hit testing and XLSX caches share the same data semantics.</summary>
@@ -54,7 +56,7 @@ public static class ChartDataResolver
             ? new CellRange(new(range.Top, Math.Min(start, end)), new(range.Top, end)).ToString()
             : new CellRange(new(Math.Min(start, end), range.Left), new(end, range.Left)).ToString());
         var categories = CellRange.Parse(categoriesRange).Cells().ToArray();
-        var definitions = spec.Series.Count > 0 ? spec.Series.Select(s => (s.Name, s.Values)).ToArray()
+        var definitions = spec.Series.Count > 0 ? spec.Series.Select(s => (s.Name, s.Values, s.NameReference)).ToArray()
             : AutoSeries().ToArray();
         if (definitions.Length > 32) throw new InvalidOperationException("A chart supports 32 series. Choose a smaller range or explicit series.");
         var pivot = definition.PivotTableId is null ? null : sheet.PivotTables.First(p => p.Id == definition.PivotTableId);
@@ -70,7 +72,7 @@ public static class ChartDataResolver
         var categoryValues = positions.Select(i => calculation.Evaluate(sheet, categories[i])).ToArray();
         var result = new List<ChartSeriesData>();
         var consumed = categories.Length;
-        foreach (var (name, valuesRange) in definitions)
+        foreach (var (caption, valuesRange, nameReference) in definitions)
         {
             var addresses = CellRange.Parse(valuesRange).Cells().ToArray();
             consumed += addresses.Length;
@@ -83,7 +85,8 @@ public static class ChartDataResolver
                 var value = calculation.Evaluate(sheet, address);
                 return value.Kind == ValueKind.Number && double.IsFinite(value.Number) ? value.Number : (double?)null;
             }).ToArray();
-            result.Add(new(name, valuesRange, values) { ReferenceAreas = report is null ? null : Areas(addresses, positions) });
+            var name = nameReference is null ? caption : ChartTextResolver.Resolve(book, nameReference, calculation);
+            result.Add(new(name, valuesRange, values) { NameReference = nameReference, ReferenceAreas = report is null ? null : Areas(addresses, positions) });
         }
         return new(sheet.Name, range.ToString(), categoriesRange,
             categoryValues.Select((v, index) =>
@@ -93,9 +96,9 @@ public static class ChartDataResolver
                 return report!.RowBands[address.Row - pivot!.Anchor.Row - 1].Key.Label;
 
             }).ToArray(),
-            categoryValues.Select(v => v.Kind == ValueKind.Number ? v.Number : (double?)null).ToArray(), result) { CategoryAreas = report is null ? null : Areas(categories, positions), HasCompositeCategories = pivot?.Rows.Count > 1 };
+            categoryValues.Select(v => v.Kind == ValueKind.Number ? v.Number : (double?)null).ToArray(), result) { CategoryAreas = report is null ? null : Areas(categories, positions), HasCompositeCategories = pivot?.Rows.Count > 1, Text = ChartTextResolver.Resolve(book, spec, calculation) };
 
-        IEnumerable<(string Name, string Values)> AutoSeries()
+        IEnumerable<(string Name, string Values, ChartTextReference? NameReference)> AutoSeries()
         {
             if (end < start) yield break;
             var firstSeries = spec.SeriesInRows ? range.Top + 1 : range.Left + 1;
@@ -105,10 +108,25 @@ public static class ChartDataResolver
                 var header = spec.SeriesInRows ? new CellAddress(i, range.Left) : new CellAddress(range.Top, i);
                 var name = spec.HasHeaders ? calculation.Evaluate(sheet, header).ToString() : "Series " + (i - firstSeries + 1);
                 var values = spec.SeriesInRows ? new CellRange(new(i, start), new(i, end)) : new CellRange(new(start, i), new(end, i));
-                yield return (name.Length == 0 ? "Series " + (i - firstSeries + 1) : name, values.ToString());
+                yield return (name.Length == 0 ? "Series " + (i - firstSeries + 1) : name, values.ToString(),
+                    spec.HasHeaders ? new ChartTextReference(sheet.Name, header.ToString()) : null);
             }
         }
     }
+    /// <summary>Caption-only drawing edits keep category/X/value arrays and their source evaluation intact.</summary>
+    public static ChartData RefreshText(Workbook book, Worksheet host, ChartSpec chart, ChartData data, CalculationEngine calculation)
+    {
+        var effective = EffectiveDefinition(book, host, chart);
+        var series = data.Series.Select((previous, index) =>
+        {
+            var item = index < effective.Series.Count ? effective.Series[index] : null;
+            var link = item?.NameReference ?? (item is null ? previous.NameReference : null);
+            var name = link is null ? item?.Name ?? previous.Name : ChartTextResolver.Resolve(book, link, calculation);
+            return previous with { Name = name, NameReference = link };
+        }).ToArray();
+        return data with { Series = series, Text = ChartTextResolver.Resolve(book, effective, calculation) };
+    }
+
     private static IReadOnlyList<string> Areas(CellAddress[] addresses, int[] positions)
     {
         var result = new List<string>();
@@ -135,12 +153,20 @@ public sealed class ChartDataCache
         ChartSpec Binding, PivotTableSpec? Pivot, ChartData Data);
     private readonly Dictionary<string, Entry> _entries = [];
     public long ResolveCount { get; private set; }
+    public long TextRefreshCount { get; private set; }
     public ChartData Get(Workbook book, Worksheet host, ChartSpec chart, CalculationEngine calculation)
     {
         var pivot = FindPivot(book, host, chart);
         if (_entries.TryGetValue(chart.Id, out var entry) && ReferenceEquals(entry.Book, book) && ReferenceEquals(entry.Host, host)
             && ReferenceEquals(entry.Engine, calculation) && entry.Revision == book.Revision
-            && ReferenceEquals(entry.Pivot, pivot) && SameBinding(entry.Binding, chart)) return entry.Data;
+            && ReferenceEquals(entry.Pivot, pivot) && SameVectors(entry.Binding, chart))
+        {
+            if (SameText(entry.Binding, chart)) return entry.Data;
+            var renamed = ChartDataResolver.RefreshText(book, host, chart, entry.Data, calculation);
+            _entries[chart.Id] = entry with { Binding = chart.CloneDocument(), Data = renamed };
+            TextRefreshCount++;
+            return renamed;
+        }
         if (_entries.Count >= 128) _entries.Clear();
         var data = ChartDataResolver.Resolve(book, host, chart, calculation);
         ResolveCount++;
@@ -161,11 +187,19 @@ public sealed class ChartDataCache
             foreach (var pivot in source.PivotTables) if (pivot.Id == chart.PivotTableId) return pivot;
         return null;
     }
-    private static bool SameBinding(ChartSpec a, ChartSpec b)
+    private static bool SameVectors(ChartSpec a, ChartSpec b)
     {
         if (a.SourceUnavailable != b.SourceUnavailable || a.PivotTableId != b.PivotTableId || a.SourceSheet != b.SourceSheet || a.Range != b.Range || a.Categories != b.Categories || a.SeriesInRows != b.SeriesInRows
             || a.HasHeaders != b.HasHeaders || a.PlotHiddenCells != b.PlotHiddenCells || a.Series.Count != b.Series.Count) return false;
-        for (var i = 0; i < a.Series.Count; i++) if (a.Series[i].Name != b.Series[i].Name || a.Series[i].Values != b.Series[i].Values) return false;
+        for (var i = 0; i < a.Series.Count; i++) if (a.Series[i].Values != b.Series[i].Values) return false;
+        return true;
+    }
+    private static bool SameText(ChartSpec a, ChartSpec b)
+    {
+        if (a.TitleReference != b.TitleReference || a.CategoryAxisTitleReference != b.CategoryAxisTitleReference
+            || a.ValueAxisTitleReference != b.ValueAxisTitleReference) return false;
+        for (var i = 0; i < a.Series.Count; i++)
+            if (a.Series[i].Name != b.Series[i].Name || a.Series[i].NameReference != b.Series[i].NameReference) return false;
         return true;
     }
     public void Clear() => _entries.Clear();

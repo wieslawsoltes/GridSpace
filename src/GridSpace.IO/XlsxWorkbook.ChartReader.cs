@@ -64,8 +64,10 @@ public static partial class XlsxWorkbook
         if (groups.Length == 0) { warnings.Add("This chart type is not supported."); return null; }
         ChartKind Kind(XElement group) => group.Name.LocalName == "barChart" && (string?)group.Element(C + "barDir")?.Attribute("val") == "bar" ? ChartKind.Bar : types[group.Name.LocalName];
         var kind = groups.Select(Kind).Distinct().Count() > 1 ? ChartKind.Combo : Kind(groups[0]);
-        var spec = new ChartSpec { Kind = kind, Title = string.Concat(root.Element(C + "chart")?.Element(C + "title")?.Descendants(A + "t").Select(t => t.Value) ?? []) };
-        var primaryAxes = groups[0].Elements(C + "axId").Select(e => (string?)e.Attribute("val")).ToHashSet();
+        var heading = ReadChartText(root.Element(C + "chart")?.Element(C + "title")?.Element(C + "tx"), host.Name, warnings);
+        var spec = new ChartSpec { Kind = kind, Title = heading.Caption, TitleReference = heading.Reference };
+        var primaryAxisIds = groups[0].Elements(C + "axId").Select(e => (string?)e.Attribute("val")).ToArray();
+        var primaryAxes = primaryAxisIds.ToHashSet();
         CellRange? union = null;
         foreach (var group in groups)
         {
@@ -77,12 +79,11 @@ public static partial class XlsxWorkbook
                     || source != categorySource || spec.SourceSheet is not null && spec.SourceSheet != source)
                 { warnings.Add("A chart series with unsupported or mixed-sheet ranges was skipped."); continue; }
                 spec.SourceSheet = source; spec.Categories ??= categories.ToString();
-                var name = series.Element(C + "tx")?.Element(C + "v")?.Value ??
-                    series.Element(C + "tx")?.Descendants(C + "pt").FirstOrDefault()?.Element(C + "v")?.Value ?? "Series " + (spec.Series.Count + 1);
+                var name = ReadChartText(series.Element(C + "tx"), source, warnings);
                 var color = (string?)series.Element(C + "spPr")?.Descendants(A + "srgbClr").FirstOrDefault()?.Attribute("val");
                 spec.Series.Add(new ChartSeries
                 {
-                    Name = name, Values = values.ToString(), Color = color is { Length: 6 } ? "#" + color : ChartDataResolver.Palette[spec.Series.Count % ChartDataResolver.Palette.Length],
+                    Name = name.Caption, NameReference = name.Reference, Values = values.ToString(), Color = color is { Length: 6 } ? "#" + color : ChartDataResolver.Palette[spec.Series.Count % ChartDataResolver.Palette.Length],
                     Kind = kind == ChartKind.Combo && Kind(group) is ChartKind.Column or ChartKind.Line or ChartKind.Area ? Kind(group) : null,
                     SecondaryAxis = !group.Elements(C + "axId").Any(e => primaryAxes.Contains((string?)e.Attribute("val")))
                 });
@@ -103,14 +104,42 @@ public static partial class XlsxWorkbook
         spec.PlotHiddenCells = chart.Element(C + "plotVisOnly") is { } visible && !Flag(visible.Attribute("val"));
         spec.Legend = chart.Element(C + "legend") is not { } legend ? ChartLegendPosition.None :
             (string?)legend.Element(C + "legendPos")?.Attribute("val") switch { "l" => ChartLegendPosition.Left, "r" => ChartLegendPosition.Right, "t" => ChartLegendPosition.Top, _ => ChartLegendPosition.Bottom };
-        var axis = plot.Elements(C + "valAx").FirstOrDefault();
+        XElement? FindAxis(int ordinal, string fallback) => ordinal < primaryAxisIds.Length
+            ? plot.Elements().FirstOrDefault(e => e.Name.LocalName is "catAx" or "valAx" or "dateAx" && (string?)e.Element(C + "axId")?.Attribute("val") == primaryAxisIds[ordinal])
+            : plot.Elements(C + fallback).FirstOrDefault();
+        var axis = FindAxis(1, "valAx");
+        var categoryAxis = FindAxis(0, "catAx");
         spec.Minimum = axis?.Element(C + "scaling")?.Element(C + "min")?.Attribute("val") is { } min ? Number(min) : null;
         spec.Maximum = axis?.Element(C + "scaling")?.Element(C + "max")?.Attribute("val") is { } max ? Number(max) : null;
         spec.ValueFormat = (string?)axis?.Element(C + "numFmt")?.Attribute("formatCode") ?? "General";
-        spec.ValueAxisTitle = string.Concat(axis?.Element(C + "title")?.Descendants(A + "t").Select(t => t.Value) ?? []);
-        spec.CategoryAxisTitle = string.Concat(plot.Element(C + "catAx")?.Element(C + "title")?.Descendants(A + "t").Select(t => t.Value) ?? []);
+        var valueTitle = ReadChartText(axis?.Element(C + "title")?.Element(C + "tx"), host.Name, warnings);
+        var categoryTitle = ReadChartText(categoryAxis?.Element(C + "title")?.Element(C + "tx"), host.Name, warnings);
+        spec.ValueAxisTitle = valueTitle.Caption; spec.ValueAxisTitleReference = valueTitle.Reference;
+        spec.CategoryAxisTitle = categoryTitle.Caption; spec.CategoryAxisTitleReference = categoryTitle.Reference;
         spec.ShowGridLines = axis?.Element(C + "majorGridlines") is not null;
         return spec;
+    }
+
+    private static (string Caption, ChartTextReference? Reference) ReadChartText(XElement? text, string defaultSheet, List<string> warnings)
+    {
+        var reference = text?.Element(C + "strRef");
+        var caption = reference?.Element(C + "strCache")?.Elements(C + "pt").FirstOrDefault(p => (string?)p.Attribute("idx") == "0")?.Element(C + "v")?.Value
+            ?? text?.Element(C + "v")?.Value ?? string.Concat(text?.Descendants(A + "t").Select(t => t.Value) ?? []);
+        // The fallback literal has the model's caption bound. A valid cell link still
+        // resolves its full formatted value when rendered; no chart is dropped for a long cached caption.
+        if (caption.Length > 1024) caption = caption[..1024];
+        if (reference is null) return (caption, null);
+        var formula = reference.Element(C + "f")?.Value;
+        try
+        {
+            if (formula == "#REF!") return (caption, new(defaultSheet, "#REF!"));
+            return (caption, ChartTextReference.Parse(formula ?? "", defaultSheet));
+        }
+        catch (Exception error) when (error is ArgumentException or FormatException)
+        {
+            warnings.Add("Chart text has an unsupported reference; its cached caption was retained: " + error.Message);
+            return (caption, null);
+        }
     }
 
     private static bool TryChartVector(string? formula, string fallbackSheet, out string sheet, out CellRange range)

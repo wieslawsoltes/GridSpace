@@ -90,7 +90,7 @@ public sealed partial class SpreadsheetGrid : UserControl, IDisposable
         {
             if (Session is null) return;
             var p = e.GetPosition(_canvas);
-            if (TryChartDoubleTap(p) || TryPivotDoubleTap(p)) { e.Handled = true; return; }
+            if (TryChartDoubleTap(p) || TryChartSourceDoubleTap(p) || TryPivotDoubleTap(p)) { e.Handled = true; return; }
             var hit = Viewport.HitTest(p.X, p.Y);
             if (hit.Kind == GridHitKind.Cell && Session.PivotAt(new CellAddress(hit.Row, hit.Column)) is { } pivot
                 && hit.Row > pivot.Anchor.Row && hit.Column >= pivot.Anchor.Column + (pivot.Layout == PivotLayout.Compact ? 1 : Math.Max(1, pivot.Rows.Count)))

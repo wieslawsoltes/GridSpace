@@ -19,6 +19,12 @@ public static class ChartSourceGeometry
     {
         var range = binding.Range.Normalized;
         var bounds = view.RangeBounds(range, pane);
+        if (binding.IsSingleCell)
+        {
+            var xText = bounds.Right - .5; var yText = bounds.Y + bounds.Height / 2;
+            if (Owns(range.Start) && pane.Clip.Contains(xText, yText)) yield return new(ChartSourceHandle.Move, xText, yText);
+            yield break;
+        }
         if (Owns(range.Start) && pane.Clip.Contains(bounds.X, bounds.Y))
             yield return new(ChartSourceHandle.Start, bounds.X, bounds.Y);
         // Keep an exclusive bottom/right endpoint inside its owning pane.

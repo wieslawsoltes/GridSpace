@@ -13,11 +13,14 @@ public static class ChartSourceEditing
     public static IReadOnlyList<ChartSourceBinding> Bindings(ChartSpec chart, string hostSheet)
     {
         ArgumentNullException.ThrowIfNull(chart);
-        if (chart.PivotTableId is not null || chart.SourceUnavailable ||
-            chart.SourceSheet is { } source && !source.Equals(hostSheet, StringComparison.OrdinalIgnoreCase))
-            return Array.Empty<ChartSourceBinding>();
+        if (chart.PivotTableId is not null) return Array.Empty<ChartSourceBinding>();
         chart.Validate();
-        var result = new List<ChartSourceBinding>(chart.Series.Count + 2);
+        var result = new List<ChartSourceBinding>(chart.Series.Count * 2 + 5);
+        if (chart.SourceUnavailable || chart.SourceSheet is { } source && !source.Equals(hostSheet, StringComparison.OrdinalIgnoreCase))
+        {
+            AddText();
+            return result.AsReadOnly();
+        }
         var data = CellRange.Parse(chart.Range).Normalized;
         if (chart.Series.Count == 0)
             result.Add(new(ChartSourcePart.DataRange, -1, data, chart.SeriesInRows));
@@ -28,7 +31,22 @@ public static class ChartSourceEditing
         }
         for (var i = 0; i < chart.Series.Count; i++)
             result.Add(Binding(ChartSourcePart.SeriesValues, i, CellRange.Parse(chart.Series[i].Values).Normalized));
+        AddText();
         return result.AsReadOnly();
+
+        void AddText()
+        {
+            AddLink(chart.TitleReference, ChartSourcePart.Title, -1);
+            AddLink(chart.CategoryAxisTitleReference, ChartSourcePart.CategoryAxisTitle, -1);
+            AddLink(chart.ValueAxisTitleReference, ChartSourcePart.ValueAxisTitle, -1);
+            for (var i = 0; i < chart.Series.Count; i++) AddLink(chart.Series[i].NameReference, ChartSourcePart.SeriesName, i);
+        }
+        void AddLink(ChartTextReference? link, ChartSourcePart part, int index)
+        {
+            if (link is null || link.IsBroken || !link.Sheet.Equals(hostSheet, StringComparison.OrdinalIgnoreCase)) return;
+            var address = CellAddress.Parse(link.Cell);
+            result.Add(new(part, index, new(address, address), false));
+        }
 
         ChartSourceBinding Binding(ChartSourcePart part, int index, CellRange range)
         {
@@ -48,6 +66,7 @@ public static class ChartSourceEditing
         replacement = replacement.Normalized;
         if (!replacement.Start.IsValid || !replacement.End.IsValid || replacement.Count > MaximumSourceCells)
             throw new ArgumentException("Chart references must stay inside the worksheet and contain at most 100,000 cells.");
+        if (binding.IsSingleCell && replacement.Count != 1) throw new ArgumentException("A chart text link must remain a single cell.");
         if (binding.IsVector && (binding.Horizontal ? replacement.Top != replacement.Bottom : replacement.Left != replacement.Right))
             throw new ArgumentException("A chart vector must keep its row or column orientation.");
         var next = chart.CloneDocument();
@@ -65,9 +84,16 @@ public static class ChartSourceEditing
                     ValuesHorizontal = replacement.Count == 1 ? binding.Horizontal : null
                 };
                 break;
+            case ChartSourcePart.Title: next.TitleReference = next.TitleReference! with { Cell = replacement.Start.ToString() }; break;
+            case ChartSourcePart.CategoryAxisTitle: next.CategoryAxisTitleReference = next.CategoryAxisTitleReference! with { Cell = replacement.Start.ToString() }; break;
+            case ChartSourcePart.ValueAxisTitle: next.ValueAxisTitleReference = next.ValueAxisTitleReference! with { Cell = replacement.Start.ToString() }; break;
+            case ChartSourcePart.SeriesName:
+                next.Series[binding.SeriesIndex] = next.Series[binding.SeriesIndex] with
+                { NameReference = next.Series[binding.SeriesIndex].NameReference! with { Cell = replacement.Start.ToString() } };
+                break;
             default: throw new ArgumentOutOfRangeException(nameof(binding));
         }
-        ValidateSourceBudget(next);
+        if (binding.IsSingleCell) next.Validate(); else ValidateSourceBudget(next);
         return next;
     }
 
@@ -77,7 +103,7 @@ public static class ChartSourceEditing
         ArgumentNullException.ThrowIfNull(binding);
         if (!Enum.IsDefined(handle)) throw new ArgumentOutOfRangeException(nameof(handle));
         var range = binding.Range.Normalized;
-        if (handle == ChartSourceHandle.Move)
+        if (handle == ChartSourceHandle.Move || binding.IsSingleCell)
         {
             var rows = Math.Clamp(rowDelta, -range.Top, CellAddress.MaxRows - 1 - range.Bottom);
             var columns = Math.Clamp(columnDelta, -range.Left, CellAddress.MaxColumns - 1 - range.Right);

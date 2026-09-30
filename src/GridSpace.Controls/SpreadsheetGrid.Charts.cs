@@ -124,13 +124,28 @@ public sealed partial class SpreadsheetGrid
         return true;
     }
 
+    private ChartSpec? _chartTitleDocument;
+    private GridSpace.Editing.SpreadsheetSession? _chartTitleOwner;
+    private string? _chartTitleInitialText;
+
+    private void TitleOwnerChanged(object? sender, GridSpace.Editing.SessionChangedEventArgs args)
+    {
+        if (!_endingChartTitle && (args.DocumentChanged || !ReferenceEquals(Session, _chartTitleOwner) ||
+            !ReferenceEquals(Session?.FindChart(_chartTitleDocument?.Id), _chartTitleDocument))) CancelChartTitle();
+    }
+
     public void BeginChartTitleEdit()
     {
+        if (!CommitEdit() || Session is null) return;
         var chart = SelectedChart;
-        if (chart is null || !CommitEdit()) return;
+        if (chart is null) return;
         CancelChartGesture();
         _chartTitleEditor = OfficeTheme.Field("Chart title editor");
-        _chartTitleEditor.Text = chart.Title;
+        _chartTitleDocument = chart; _chartTitleOwner = Session;
+        _chartTitleInitialText = chart.TitleReference is { } link
+            ? GridSpace.Formulas.ChartTextResolver.Resolve(Session.Book, link, Session.Calculation) : chart.Title;
+        _chartTitleEditor.Text = _chartTitleInitialText;
+        _chartTitleOwner.Changed += TitleOwnerChanged;
         _chartTitleEditor.FontSize = 16 * Viewport.Zoom;
         _chartTitleEditor.BorderBrush = OfficeTheme.Brush("#107C41");
         _chartTitleEditor.KeyDown += (_, e) =>
@@ -165,7 +180,12 @@ public sealed partial class SpreadsheetGrid
         try
         {
             var text = _chartTitleEditor.Text;
-            if (SelectedChartId is { } id) Session?.UpdateChart(id, chart => chart with { Title = text }, "Edit chart title");
+            if (text != _chartTitleInitialText && _chartTitleDocument is { } expected)
+            {
+                if (!ReferenceEquals(Session, _chartTitleOwner)) throw new InvalidOperationException("The title editor no longer owns this document.");
+                Session!.CommitChartTitleEdit(expected, text);
+            }
+            ReleaseTitleOwner();
             _overlay.Children.Remove(_chartTitleEditor); _chartTitleEditor = null;
             return true;
         }
@@ -173,9 +193,16 @@ public sealed partial class SpreadsheetGrid
         finally { _endingChartTitle = false; }
     }
 
+    private void ReleaseTitleOwner()
+    {
+        if (_chartTitleOwner is not null) _chartTitleOwner.Changed -= TitleOwnerChanged;
+        _chartTitleOwner = null; _chartTitleDocument = null; _chartTitleInitialText = null;
+    }
+
     private void CancelChartTitle()
     {
         _endingChartTitle = true;
+        ReleaseTitleOwner();
         if (_chartTitleEditor is not null) _overlay.Children.Remove(_chartTitleEditor);
         _chartTitleEditor = null; _endingChartTitle = false;
     }

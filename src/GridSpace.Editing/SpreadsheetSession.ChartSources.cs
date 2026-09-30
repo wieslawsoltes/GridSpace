@@ -18,7 +18,7 @@ public sealed partial class SpreadsheetSession
         UpdateChart(expected.Id, chart => ChartSourceEditing.Replace(chart, Sheet.Name, binding, range), "Change chart source");
     }
 
-    /// <summary>Converts automatic bindings to explicit vectors once, keeping current names as captions.</summary>
+    /// <summary>Converts automatic bindings to explicit vectors once, retaining live header-name links where available.</summary>
     public void CustomizeChartSource(string id)
     {
         var chart = FindChart(id) ?? throw new InvalidOperationException("Select a chart first.");
@@ -34,7 +34,7 @@ public sealed partial class SpreadsheetSession
                 : null,
             Series = data.Series.Select((series, i) => new ChartSeries
             {
-                Name = series.Name, Values = series.ValuesRange,
+                Name = series.Name, NameReference = series.NameReference, Values = series.ValuesRange,
                 ValuesHorizontal = CellRange.Parse(series.ValuesRange).Count == 1 ? current.SeriesInRows : null,
                 Color = ChartDataResolver.Palette[i % ChartDataResolver.Palette.Length]
             }).ToList()

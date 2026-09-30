@@ -11,6 +11,7 @@ public sealed partial class SpreadsheetWorkbench
     private string? _inspectedPivotId;
     private bool _applyingInspector;
     private ChartSpec? _inspectedChart;
+    private long _inspectedChartRevision = -1;
     private PivotTableSpec? _inspectedPivot;
     private string? _contextTab;
     private string? _lastSelectedPivot;
@@ -44,7 +45,11 @@ public sealed partial class SpreadsheetWorkbench
         {
             _applyingInspector = true;
             try { return Try(() => Session.UpdateChart(next.Id, _ => next)); }
-            finally { _applyingInspector = false; Surface.Invalidate(); }
+            finally
+            {
+                _applyingInspector = false;
+                DispatcherQueue.TryEnqueue(() => { UpdateAnalytics(); Surface.Invalidate(); });
+            }
         };
         _analytics.Child = _chartEditor; _analytics.Visibility = Visibility.Visible;
         BindChartInspector(chart);
@@ -53,7 +58,7 @@ public sealed partial class SpreadsheetWorkbench
 
     private void BindChartInspector(ChartSpec chart)
     {
-        _inspectedChart = chart;
+        _inspectedChart = chart; _inspectedChartRevision = Session.Book.Revision;
         ChartData? data = null;
         try { data = Surface.Renderer.Charts.Data.Get(Session.Book, Session.Sheet, chart, Session.Calculation); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or FormatException) { ShowStatus(error.Message, true); }
@@ -108,7 +113,7 @@ public sealed partial class SpreadsheetWorkbench
             _lastSelectedPivot = activePivot?.Id;
             if (activePivot is not null && _pivotEditor is null) ShowPivotInspector(activePivot);
         }
-        if (_chartEditor is not null && Surface.SelectedChart is { } chart && !ReferenceEquals(chart, _inspectedChart))
+        if (_chartEditor is not null && Surface.SelectedChart is { } chart && (!ReferenceEquals(chart, _inspectedChart) || _inspectedChartRevision != Session.Book.Revision))
             BindChartInspector(chart);
         if (_pivotEditor is not null && _inspectedPivotId is { } id)
         {
@@ -153,7 +158,7 @@ public sealed partial class SpreadsheetWorkbench
             case "chart-customize":
                 Session.CustomizeChartSource(ChartId());
                 Surface.RevealChartSource();
-                ShowStatus("Category and series vectors are editable separately; series names are now explicit captions.");
+                ShowStatus("Category, value and linked header cells are editable separately; customized series retain live header names.");
                 break;
             case "chart-delete": Session.DeleteChart(ChartId()); Surface.SelectChart(null); break;
             case "chart-duplicate": Surface.SelectChart(Session.DuplicateChart(ChartId())); DispatcherQueue.TryEnqueue(Surface.RevealChart); break;

@@ -53,6 +53,9 @@ public sealed partial class SpreadsheetGrid
         Unloaded += (_, _) => CancelChartSourceGesture();
     }
 
+    private bool TryChartSourceDoubleTap(Point point) => Session is not null && SelectedChart is not null &&
+        ChartSourceGeometry.HitTest(Renderer.SourceBindings(Session), Viewport, point.X, point.Y) is not null;
+
     private bool TryChartSourcePressed(PointerRoutedEventArgs e)
     {
         if (Session is null || SelectedChart is not { } chart) return false;

@@ -60,7 +60,10 @@ public sealed class ChartSourceScalarOrientationTests
         var id = session.AddChart(new ChartSpec { Range = "A1:B2", SeriesInRows = rows, CategoriesHorizontal = !rows });
         session.CustomizeChartSource(id);
         var bindings = ChartSourceEditing.Bindings(session.FindChart(id)!, session.Sheet.Name);
-        Assert.Equal(2, bindings.Count);
-        Assert.All(bindings, b => { Assert.Equal(1, b.Range.Count); Assert.Equal(rows, b.Horizontal); });
+        Assert.Equal(3, bindings.Count);
+        Assert.All(bindings.Where(b => b.IsVector), b => { Assert.Equal(1, b.Range.Count); Assert.Equal(rows, b.Horizontal); });
+        var name = Assert.Single(bindings, b => b.Part == ChartSourcePart.SeriesName);
+        Assert.True(name.IsSingleCell);
+        Assert.Equal(rows ? "A2" : "B1", name.Range.ToString());
     }
 }

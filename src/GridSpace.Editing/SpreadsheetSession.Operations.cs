@@ -40,7 +40,10 @@ public sealed partial class SpreadsheetSession
         foreach (var host in Book.Sheets)
         {
             foreach (var chart in host.Charts)
+            {
                 if (!chart.SourceUnavailable && chart.SourceSheet?.Equals(old, StringComparison.OrdinalIgnoreCase) == true) chart.SourceSheet = name;
+                ChartTextLinks.Transform(chart, link => link.RenameSheet(old, name));
+            }
             foreach (var pivot in host.PivotTables)
                 if (pivot.SourceSheet.Equals(old, StringComparison.OrdinalIgnoreCase)) pivot.SourceSheet = name;
         }
@@ -62,6 +65,7 @@ public sealed partial class SpreadsheetSession
         copy.Charts = copy.Charts.Select(c => c with { Id = Guid.NewGuid().ToString("N"),
             SourceSheet = c.SourceSheet?.Equals(Sheet.Name, StringComparison.OrdinalIgnoreCase) == true ? copy.Name : c.SourceSheet,
             PivotTableId = c.PivotTableId is { } id && ids.TryGetValue(id, out var mapped) ? mapped : c.PivotTableId }).ToList();
+        foreach (var chart in copy.Charts) ChartTextLinks.Transform(chart, link => link.RenameSheet(Sheet.Name, copy.Name));
         Book.Sheets.Insert(Book.ActiveSheetIndex + 1, copy);
         Book.ActiveSheetIndex++;
     });
@@ -73,7 +77,10 @@ public sealed partial class SpreadsheetSession
             throw new InvalidOperationException("Remove the dependent PivotTables before deleting their source worksheet.");
         foreach (var host in Book.Sheets.Where(s => s != Sheet))
             foreach (var chart in host.Charts)
+            {
                 if (chart.SourceSheet?.Equals(deleted, StringComparison.OrdinalIgnoreCase) == true) chart.SourceUnavailable = true;
+                ChartTextLinks.Transform(chart, link => link.DeleteSheet(deleted));
+            }
         Book.Sheets.RemoveAt(Book.ActiveSheetIndex);
         Book.ActiveSheetIndex = Math.Min(Book.ActiveSheetIndex, Book.Sheets.Count - 1);
         RewriteWorkbookReferences((formula, _) => FormulaReferences.DeleteSheet(formula, deleted));
