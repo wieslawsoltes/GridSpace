@@ -27,8 +27,23 @@ async function insertChart(page) {
 async function clickInspectorControl(page, id, panelId = 'ChartInspector') {
   await expect.poll(async () => !!(await state(page)).controls[id]).toBe(true);
   for (let attempt = 0; attempt < 24; attempt++) {
-    const current = await state(page), target = current.controls[id], panel = current.controls[panelId];
-    expect(target, `Control ${id}`).toBeTruthy(); expect(panel, `Panel ${panelId}`).toBeTruthy();
+    // Mouse-wheel scrolling is animated. Do not click a transient diagnostic
+    // position while inertia is still moving the underlying Skia control.
+    let current, signature = '', stableSince = 0;
+    await expect.poll(async () => {
+      current = await state(page);
+      const target = current?.controls?.[id], panel = current?.controls?.[panelId];
+      if (!target || !panel || target.width <= 0 || target.height <= 0) {
+        stableSince = 0; return false;
+      }
+      const next = [target.x, target.y, target.width, target.height,
+        panel.x, panel.y, panel.width, panel.height].map(v => v.toFixed(1)).join(',');
+      if (next !== signature || !stableSince) {
+        signature = next; stableSince = Date.now(); return false;
+      }
+      return Date.now() - stableSince >= 400;
+    }, { intervals: [100], message: `Stable bounds for ${id}` }).toBe(true);
+    const target = current.controls[id], panel = current.controls[panelId];
     const top = Math.max(0, panel.y) + 8;
     const bottom = Math.min(page.viewportSize().height, panel.y + panel.height) - 8;
     if (target.y >= top && target.y + target.height <= bottom) {
