@@ -7,8 +7,13 @@ const state = page => page.evaluate(() => globalThis.gridSpaceDiagnostics);
 const failures = new WeakMap();
 
 async function click(page, id) {
-  await expect.poll(async () => !!(await state(page))?.controls?.[id], { message: `Uno control ${id}` }).toBe(true);
-  const rect = (await state(page)).controls[id];
+  // Retain the successful snapshot: a deferred inspector rebind can remove
+  // the control between two separate reads of the diagnostic state.
+  let rect;
+  await expect.poll(async () => {
+    rect = (await state(page))?.controls?.[id];
+    return !!rect && rect.width > 0 && rect.height > 0;
+  }, { message: `Uno control ${id}` }).toBe(true);
   await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
 }
 async function select(page, range) {
