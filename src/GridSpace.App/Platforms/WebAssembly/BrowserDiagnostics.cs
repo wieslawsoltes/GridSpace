@@ -95,8 +95,16 @@ internal sealed partial class BrowserDiagnostics : IDisposable
             foreach (var chart in _session.Sheet.Charts)
             {
                 json.WriteStartObject();
-                json.WriteString("id", chart.Id); json.WriteString("title", chart.Title); json.WriteString("kind", chart.Kind.ToString());
+                json.WriteString("id", chart.Id);
+                json.WriteString("titleReference", chart.TitleReference?.ToFormula());
+                json.WriteString("displayTitle", chart.TitleReference is { } titleLink ? ChartTextResolver.Resolve(_session.Book, titleLink, _session.Calculation) : chart.Title);
+                json.WriteStartArray("seriesNames");
+                foreach (var series in chart.Series)
+                    json.WriteStringValue(series.NameReference is { } nameLink ? ChartTextResolver.Resolve(_session.Book, nameLink, _session.Calculation) : series.Name);
+                json.WriteEndArray();
+                json.WriteString("title", chart.Title); json.WriteString("kind", chart.Kind.ToString());
                 json.WriteString("range", chart.Range); json.WriteString("pivotId", chart.PivotTableId);
+                json.WriteNumber("seriesCount", chart.Series.Count);
                 json.WriteNumber("width", chart.Width); json.WriteNumber("height", chart.Height);
                 json.WriteNumber("row", chart.Row); json.WriteNumber("column", chart.Column);
                 json.WriteNumber("offsetX", chart.OffsetX); json.WriteNumber("offsetY", chart.OffsetY);
@@ -138,6 +146,14 @@ internal sealed partial class BrowserDiagnostics : IDisposable
                     json.WriteStartObject(name);
                     json.WriteNumber("x", point.X); json.WriteNumber("y", point.Y);
                     json.WriteNumber("width", element.ActualWidth); json.WriteNumber("height", element.ActualHeight);
+                    if (element is ChartEditorControl chartInspector)
+                    {
+                        json.WriteString("documentId", chartInspector.BoundChartId);
+                        json.WriteNumber("visualBuilds", chartInspector.VisualBuildCount);
+                        json.WriteNumber("geometrySyncs", chartInspector.GeometrySyncCount);
+                    }
+                    if (element is PivotFieldListControl pivotInspector)
+                        json.WriteString("documentId", pivotInspector.BoundPivotId);
                     if (element is CheckBox check) json.WriteBoolean("checked", check.IsChecked == true);
                     if (element is TextBox text)
                     {

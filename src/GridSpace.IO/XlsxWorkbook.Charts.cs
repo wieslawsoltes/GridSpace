@@ -74,7 +74,7 @@ public static partial class XlsxWorkbook
         }
         catch (InvalidOperationException) when (original.SourceUnavailable || original.PivotTableId is not null)
         {
-            data = new(host.Name, original.Range, original.Range, [], [], []);
+            data = new(host.Name, original.Range, original.Range, [], [], []) { Text = ChartTextResolver.Resolve(book, original, engine) };
         }
         var plot = CE("plotArea", CE("layout"));
         ChartKind Kind(int i) => spec.Kind == ChartKind.Combo
@@ -113,10 +113,10 @@ public static partial class XlsxWorkbook
         var hasAxes = groups.Length == 0 || groups.Any(g => g.Key.Kind is not ChartKind.Pie and not ChartKind.Doughnut);
         if (hasAxes)
         {
-            plot.Add(ChartAxis(spec, 1, 2, true, false), ChartAxis(spec, 2, 1, false, false));
-            if (groups.Any(g => g.Key.Secondary)) plot.Add(ChartAxis(spec, 3, 4, true, true), ChartAxis(spec, 4, 3, false, true));
+            plot.Add(ChartAxis(spec, data.Text, 1, 2, true, false), ChartAxis(spec, data.Text, 2, 1, false, false));
+            if (groups.Any(g => g.Key.Secondary)) plot.Add(ChartAxis(spec, data.Text, 3, 4, true, true), ChartAxis(spec, data.Text, 4, 3, false, true));
         }
-        var chartElement = CE("chart", ChartTitle(spec.Title), CV("autoTitleDeleted", 0), plot);
+        var chartElement = CE("chart", ChartTitle(data.Text.Title ?? spec.Title, spec.TitleReference), CV("autoTitleDeleted", 0), plot);
         if (spec.Legend != ChartLegendPosition.None)
             chartElement.Add(CE("legend", CV("legendPos", spec.Legend switch { ChartLegendPosition.Top => "t", ChartLegendPosition.Left => "l", ChartLegendPosition.Right => "r", _ => "b" }),
                 CE("layout"), CV("overlay", 0)));
@@ -127,11 +127,16 @@ public static partial class XlsxWorkbook
                 new XElement(Analytics + "chart", JsonSerializer.Serialize(original)))));
     }
 
-    private static XElement ChartTitle(string text) => CE("title", CE("tx", CE("rich", new XElement(A + "bodyPr"),
-        new XElement(A + "lstStyle"), new XElement(A + "p", new XElement(A + "r", new XElement(A + "t", text))))),
+    private static XElement ChartTextStringReference(ChartTextReference reference, string text) =>
+        CE("strRef", CE("f", reference.ToFormula()), CE("strCache", CV("ptCount", 1), CE("pt", new XAttribute("idx", 0), CE("v", text))));
+
+    private static XElement ChartTitle(string text, ChartTextReference? reference = null) => CE("title", CE("tx",
+        reference is not null ? ChartTextStringReference(reference, text)
+            : CE("rich", new XElement(A + "bodyPr"), new XElement(A + "lstStyle"),
+                new XElement(A + "p", new XElement(A + "r", new XElement(A + "t", text))))),
         CE("layout"), CV("overlay", 0));
 
-    private static XElement ChartAxis(ChartSpec spec, int id, int cross, bool category, bool secondary)
+    private static XElement ChartAxis(ChartSpec spec, ChartTextSnapshot text, int id, int cross, bool category, bool secondary)
     {
         var numeric = !category || spec.Kind == ChartKind.Scatter;
         var scale = CE("scaling", CV("orientation", "minMax"));
@@ -139,8 +144,9 @@ public static partial class XlsxWorkbook
         var axis = CE(numeric ? "valAx" : "catAx", CV("axId", id), scale, CV("delete", category && secondary ? 1 : 0),
             CV("axPos", category ? spec.Kind == ChartKind.Bar ? "l" : "b" : spec.Kind == ChartKind.Bar ? "b" : secondary ? "r" : "l"));
         if (!category && spec.ShowGridLines && !secondary) axis.Add(CE("majorGridlines"));
-        var title = category ? spec.CategoryAxisTitle : spec.ValueAxisTitle;
-        if (title.Length > 0 && !secondary) axis.Add(ChartTitle(title));
+        var title = category ? text.CategoryAxisTitle ?? spec.CategoryAxisTitle : text.ValueAxisTitle ?? spec.ValueAxisTitle;
+        var reference = category ? spec.CategoryAxisTitleReference : spec.ValueAxisTitleReference;
+        if ((title.Length > 0 || reference is not null) && !secondary) axis.Add(ChartTitle(title, reference));
         if (numeric) axis.Add(CE("numFmt", new XAttribute("formatCode", spec.Grouping == ChartGrouping.PercentStacked ? "0%" : category ? "General" : spec.ValueFormat), new XAttribute("sourceLinked", 0)));
         axis.Add(CV("majorTickMark", "none"), CV("minorTickMark", "none"), CV("tickLblPos", "nextTo"),
             CV("crossAx", cross), CV("crosses", secondary ? "max" : "autoZero"));
@@ -153,7 +159,7 @@ public static partial class XlsxWorkbook
     {
         var vector = data.Series[index];
         var color = index < spec.Series.Count ? spec.Series[index].Color : ChartDataResolver.Palette[index % ChartDataResolver.Palette.Length];
-        var series = CE("ser", CV("idx", index), CV("order", index), CE("tx", CE("v", vector.Name)));
+        var series = CE("ser", CV("idx", index), CV("order", index), CE("tx", vector.NameReference is { } nameReference ? ChartTextStringReference(nameReference, vector.Name) : CE("v", vector.Name)));
         if (kind is ChartKind.Line or ChartKind.Scatter or ChartKind.Radar)
         {
             series.Add(CE("spPr", new XElement(A + "ln", new XAttribute("w", 25400), Solid(color))));

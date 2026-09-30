@@ -11,6 +11,7 @@ public sealed partial class SpreadsheetWorkbench
     private string? _inspectedPivotId;
     private bool _applyingInspector;
     private ChartSpec? _inspectedChart;
+    private long _inspectedChartRevision = -1;
     private PivotTableSpec? _inspectedPivot;
     private string? _contextTab;
     private string? _lastSelectedPivot;
@@ -44,7 +45,12 @@ public sealed partial class SpreadsheetWorkbench
         {
             _applyingInspector = true;
             try { return Try(() => Session.UpdateChart(next.Id, _ => next)); }
-            finally { _applyingInspector = false; Surface.Invalidate(); }
+            finally
+            {
+                _applyingInspector = false;
+                QueueChartInspectorRefresh();
+                Surface.Invalidate();
+            }
         };
         _analytics.Child = _chartEditor; _analytics.Visibility = Visibility.Visible;
         BindChartInspector(chart);
@@ -53,7 +59,19 @@ public sealed partial class SpreadsheetWorkbench
 
     private void BindChartInspector(ChartSpec chart)
     {
-        _inspectedChart = chart;
+        if (_chartEditor is { } editor && editor.BoundChartId == chart.Id &&
+            ReferenceEquals(_inspectedChartBook, Session.Book) &&
+            ReferenceEquals(_inspectedChartSheet, Session.Sheet) &&
+            _inspectedChartRevision == Session.Book.Revision &&
+            _inspectedChart is { } previous && IsGeometryOnlyChange(previous, chart))
+        {
+            editor.SynchronizeGeometry(chart);
+            _inspectedChart = chart;
+            return;
+        }
+
+        _inspectedChart = chart; _inspectedChartRevision = Session.Book.Revision;
+        _inspectedChartBook = Session.Book; _inspectedChartSheet = Session.Sheet;
         ChartData? data = null;
         try { data = Surface.Renderer.Charts.Data.Get(Session.Book, Session.Sheet, chart, Session.Calculation); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or FormatException) { ShowStatus(error.Message, true); }
@@ -95,6 +113,7 @@ public sealed partial class SpreadsheetWorkbench
     private void HideAnalytics()
     {
         _analytics.Visibility = Visibility.Collapsed; _analytics.Child = null;
+        _inspectedChartBook = null; _inspectedChartSheet = null;
         _chartEditor = null; _pivotEditor = null; _inspectedChart = null; _inspectedPivotId = null; _inspectedPivot = null;
         ContextTab(null);
     }
@@ -106,10 +125,13 @@ public sealed partial class SpreadsheetWorkbench
         if (activePivot?.Id != _lastSelectedPivot)
         {
             _lastSelectedPivot = activePivot?.Id;
-            if (activePivot is not null && _pivotEditor is null) ShowPivotInspector(activePivot);
+            if (activePivot is not null && (_pivotEditor is null || _inspectedPivotId != activePivot.Id))
+                ShowPivotInspector(activePivot);
         }
-        if (_chartEditor is not null && Surface.SelectedChart is { } chart && !ReferenceEquals(chart, _inspectedChart))
-            BindChartInspector(chart);
+        if (_chartEditor is not null && Surface.SelectedChart is { } chart &&
+            (!ReferenceEquals(chart, _inspectedChart) || _inspectedChartRevision != Session.Book.Revision ||
+             !ReferenceEquals(_inspectedChartBook, Session.Book) || !ReferenceEquals(_inspectedChartSheet, Session.Sheet)))
+            QueueChartInspectorRefresh();
         if (_pivotEditor is not null && _inspectedPivotId is { } id)
         {
             var pivot = Session.Sheet.PivotTables.FirstOrDefault(p => p.Id == id);
@@ -126,6 +148,8 @@ public sealed partial class SpreadsheetWorkbench
         if (name == "Chart Design") tabs.Add(new(name, [
             new("Chart", [new("chart-format", "Format Chart", OfficeIconKind.Chart, true), new("chart-title", "Edit Title", OfficeIconKind.Font, true),
                 new("chart-duplicate", "Duplicate", OfficeIconKind.Copy, true), new("chart-delete", "Delete", OfficeIconKind.Clear, true)]),
+            new("Data", [new("chart-source", "Edit Source", OfficeIconKind.Grid, true),
+                new("chart-customize", "Customize Series", OfficeIconKind.Chart, true)]),
             new("Layout", [new("chart-switch", "Switch Row/Column", OfficeIconKind.Grid, true), new("chart-labels", "Data Labels", OfficeIconKind.Font, true),
                 new("chart-legend", "Legend", OfficeIconKind.Grid, true), new("chart-front", "Bring to Front", OfficeIconKind.Plus, true), new("chart-back", "Send to Back", OfficeIconKind.Grid, true)])]));
         if (name == "PivotTable Analyze") tabs.Add(new(name, [
@@ -144,6 +168,15 @@ public sealed partial class SpreadsheetWorkbench
         {
             case "chart-format": ShowChartInspector(); break;
             case "chart-title": Surface.BeginChartTitleEdit(); break;
+            case "chart-source":
+                Surface.RevealChartSource();
+                ShowStatus("Drag a colored source border to move it, or a corner to resize it. Escape cancels.");
+                break;
+            case "chart-customize":
+                Session.CustomizeChartSource(ChartId());
+                Surface.RevealChartSource();
+                ShowStatus("Category, value and linked header cells are editable separately; customized series retain live header names.");
+                break;
             case "chart-delete": Session.DeleteChart(ChartId()); Surface.SelectChart(null); break;
             case "chart-duplicate": Surface.SelectChart(Session.DuplicateChart(ChartId())); DispatcherQueue.TryEnqueue(Surface.RevealChart); break;
             case "chart-switch": Session.UpdateChart(ChartId(), c => c with { SeriesInRows = !c.SeriesInRows, Series = [], Categories = null }); break;

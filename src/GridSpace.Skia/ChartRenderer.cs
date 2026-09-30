@@ -33,14 +33,19 @@ public sealed class ChartRenderer : IDisposable
             using var title = Font(16, true);
             using var text = Font(11);
             using var small = Font(10);
-            var heading = Ellipsis(spec.Title, title, Math.Max(20, outer.Width - 24));
-            Text(canvas, heading, outer.MidX - title.MeasureText(heading) / 2, 29, title, Ink(spec.Foreground));
             ChartData data;
             try { data = Data.Get(book, host, spec, calculation); }
             catch (Exception error) when (error is ArgumentException or InvalidOperationException or FormatException)
             {
+                var fallback = ChartTextResolver.Resolve(book, spec, calculation).Title ?? spec.Title;
+                var heading = Ellipsis(fallback, title, Math.Max(20, outer.Width - 24));
+                Text(canvas, heading, outer.MidX - title.MeasureText(heading) / 2, 29, title, Ink(spec.Foreground));
                 Text(canvas, error.Message, 15, 60, text, Ink("#A4262C")); return;
             }
+            var caption = Ellipsis(data.Text.Title ?? spec.Title, title, Math.Max(20, outer.Width - 24));
+            Text(canvas, caption, outer.MidX - title.MeasureText(caption) / 2, 29, title, Ink(spec.Foreground));
+            var categoryTitle = data.Text.CategoryAxisTitle ?? spec.CategoryAxisTitle;
+            var valueTitle = data.Text.ValueAxisTitle ?? spec.ValueAxisTitle;
             var active = Enumerable.Range(0, data.Series.Count).Where(i => i >= spec.Series.Count || spec.Series[i].Visible).ToArray();
             if (active.Length == 0 || data.Categories.Length == 0)
             {
@@ -48,8 +53,8 @@ public sealed class ChartRenderer : IDisposable
             }
             var cartesian = spec.Kind is not ChartKind.Pie and not ChartKind.Doughnut and not ChartKind.Radar;
             var plot = new SKRect(cartesian ? 65 : 24, 49, outer.Right - 22, outer.Bottom - 43);
-            if (cartesian && spec.ValueAxisTitle.Length > 0) plot.Left += 14;
-            if (cartesian && spec.CategoryAxisTitle.Length > 0) plot.Bottom -= 16;
+            if (cartesian && valueTitle.Length > 0) plot.Left += 14;
+            if (cartesian && categoryTitle.Length > 0) plot.Bottom -= 16;
             switch (spec.Legend)
             {
                 case ChartLegendPosition.Bottom: plot.Bottom -= 32; break;
@@ -62,12 +67,12 @@ public sealed class ChartRenderer : IDisposable
             else if (spec.Kind == ChartKind.Radar) DrawRadar(canvas, data, spec, active, plot, small);
             else DrawCartesian(canvas, data, spec, active, plot, text, small);
             DrawLegend(canvas, data, spec, active, outer, text);
-            if (cartesian && spec.CategoryAxisTitle.Length > 0)
-                Text(canvas, spec.CategoryAxisTitle, plot.MidX - text.MeasureText(spec.CategoryAxisTitle) / 2, plot.Bottom + 38, text, Ink(spec.Foreground));
-            if (cartesian && spec.ValueAxisTitle.Length > 0)
+            if (cartesian && categoryTitle.Length > 0)
+                Text(canvas, categoryTitle, plot.MidX - text.MeasureText(categoryTitle) / 2, plot.Bottom + 38, text, Ink(spec.Foreground));
+            if (cartesian && valueTitle.Length > 0)
             {
                 canvas.Save(); canvas.Translate(17, plot.MidY); canvas.RotateDegrees(-90);
-                Text(canvas, spec.ValueAxisTitle, -text.MeasureText(spec.ValueAxisTitle) / 2, 0, text, Ink(spec.Foreground)); canvas.Restore();
+                Text(canvas, valueTitle, -text.MeasureText(valueTitle) / 2, 0, text, Ink(spec.Foreground)); canvas.Restore();
             }
         }
         finally { canvas.Restore(); }

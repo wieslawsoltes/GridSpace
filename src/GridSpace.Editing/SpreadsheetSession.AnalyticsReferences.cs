@@ -44,6 +44,7 @@ public sealed partial class SpreadsheetSession
         {
             foreach (var chart in host.Charts)
             {
+                ChartTextLinks.Transform(chart, link => link.Rebase(Sheet.Name, edit));
                 if (host == Sheet)
                 {
                     var anchor = edit.Map(new CellAddress(chart.Row, chart.Column));

@@ -9,7 +9,10 @@ public enum ChartLegendPosition { None, Bottom, Right, Top, Left }
 public sealed record ChartSeries
 {
     public string Name { get; init; } = "";
+    public ChartTextReference? NameReference { get; init; }
     public string Values { get; init; } = "B2:B5";
+    /// <summary>Orientation hint for a one-cell vector. Larger ranges determine their own orientation.</summary>
+    public bool? ValuesHorizontal { get; init; }
     public string Color { get; init; } = "#4472C4";
     public ChartKind? Kind { get; init; }
     public bool SecondaryAxis { get; init; }
@@ -21,6 +24,9 @@ public sealed record ChartSpec
 {
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
     public string Title { get; set; } = "Chart title";
+    public ChartTextReference? TitleReference { get; set; }
+    public ChartTextReference? CategoryAxisTitleReference { get; set; }
+    public ChartTextReference? ValueAxisTitleReference { get; set; }
     public ChartKind Kind { get; set; }
     public string Range { get; set; } = "A1:B5";
     public string? SourceSheet { get; set; }
@@ -28,6 +34,8 @@ public sealed record ChartSpec
     public bool SeriesInRows { get; set; }
     public bool HasHeaders { get; set; } = true;
     public string? Categories { get; set; }
+    /// <summary>Orientation hint for a one-cell category vector; not a viewport or gesture coordinate.</summary>
+    public bool? CategoriesHorizontal { get; set; }
     public List<ChartSeries> Series { get; set; } = [];
     public ChartGrouping Grouping { get; set; }
     public ChartLegendPosition Legend { get; set; } = ChartLegendPosition.Bottom;
@@ -73,6 +81,7 @@ public sealed record ChartSpec
             throw new ArgumentException("Doughnut hole must be 10–90%; gap width must be 0–500%.");
         if (CategoryAxisTitle is null || CategoryAxisTitle.Length > 1024 || ValueAxisTitle is null || ValueAxisTitle.Length > 1024
             || ValueFormat is null || ValueFormat.Length > 256) throw new ArgumentException("Invalid chart text or number format.");
+        TitleReference?.Validate(); CategoryAxisTitleReference?.Validate(); ValueAxisTitleReference?.Validate();
         if (Series is null || Series.Count > 32) throw new ArgumentException("A chart supports at most 32 series.");
         if (SourceSheet is not null) Workbook.ValidateSheetName(SourceSheet);
         if (Categories is not null) ValidateVector(Categories);
@@ -81,6 +90,7 @@ public sealed record ChartSpec
         {
             ArgumentNullException.ThrowIfNull(series);
             if (series.Name is null || series.Name.Length > 1024) throw new ArgumentException("Invalid series name.");
+            series.NameReference?.Validate();
             ValidateVector(series.Values);
             if (series.Kind is { } kind && kind is not ChartKind.Column and not ChartKind.Line and not ChartKind.Area)
                 throw new ArgumentException("Combination series support column, line and area kinds.");
