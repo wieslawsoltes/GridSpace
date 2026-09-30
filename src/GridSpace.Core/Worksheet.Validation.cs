@@ -4,6 +4,22 @@ public sealed partial class Worksheet
 {
     public void ValidateMetadata()
     {
+        if (Charts is null || PivotTables is null || Charts.Count > 128 || PivotTables.Count > 32 || Charts.Any(c => c is null) || PivotTables.Any(p => p is null))
+            throw new InvalidDataException("A sheet supports at most 128 charts and 32 PivotTables.");
+        if (Charts.Select(c => c.Id).Distinct(StringComparer.Ordinal).Count() != Charts.Count
+            || PivotTables.Select(p => p.Id).Distinct(StringComparer.Ordinal).Count() != PivotTables.Count)
+            throw new InvalidDataException("Chart and PivotTable identifiers must be unique within a sheet.");
+        foreach (var chart in Charts) chart.Validate();
+        foreach (var pivot in PivotTables) pivot.Validate();
+        for (var i = 0; i < PivotTables.Count; i++)
+        {
+            if (PivotTables[i].OutputRange is not { } output) continue;
+            var rectangle = CellRange.Parse(output);
+            if (rectangle.Count > 100000 || rectangle.Start != PivotTables[i].Anchor)
+                throw new InvalidDataException("A PivotTable output must start at its destination.");
+            if (PivotTables.Skip(i + 1).Any(p => p.OutputRange is { } other && CellRange.Parse(other).Intersects(rectangle)))
+                throw new InvalidDataException("PivotTable reports cannot overlap.");
+        }
         if (ConditionalFormats is null || Filters is null || FilteredRows is null || SortLevels is null)
             throw new InvalidDataException("Worksheet data-tool collections cannot be null.");
         if (ConditionalFormats.Count > 256 || Filters.Count > 256 || SortLevels.Count > 64)

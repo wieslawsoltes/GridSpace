@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using GridSpace.Editing;
+using GridSpace.Core;
+using GridSpace.Layout;
 using GridSpace.Controls;
 using GridSpace.Formulas;
 using GridSpace.Workbench;
@@ -13,7 +15,7 @@ using Windows.Foundation;
 namespace GridSpace.App;
 
 /// <summary>Opt-in read-only model and hit-target snapshots. Tests still send actual keyboard and pointer events.</summary>
-internal sealed class BrowserDiagnostics : IDisposable
+internal sealed partial class BrowserDiagnostics : IDisposable
 {
     private readonly SpreadsheetSession _session;
     private readonly SpreadsheetWorkbench _workbench;
@@ -86,6 +88,46 @@ internal sealed class BrowserDiagnostics : IDisposable
             json.WriteNumber("height", _workbench.Surface.ActualHeight);
             json.WriteString("status", _workbench.CurrentStatus);
             json.WriteBoolean("overlayOpen", _workbench.DataToolOverlay is not null);
+            json.WriteString("selectedChart", _workbench.Surface.SelectedChartId);
+            json.WriteNumber("chartDataResolutions", _workbench.Surface.Renderer.Charts.Data.ResolveCount);
+            json.WriteNumber("drawingRevision", _session.Book.DrawingRevision);
+            json.WriteStartArray("charts");
+            foreach (var chart in _session.Sheet.Charts)
+            {
+                json.WriteStartObject();
+                json.WriteString("id", chart.Id); json.WriteString("title", chart.Title); json.WriteString("kind", chart.Kind.ToString());
+                json.WriteString("range", chart.Range); json.WriteString("pivotId", chart.PivotTableId);
+                json.WriteNumber("width", chart.Width); json.WriteNumber("height", chart.Height);
+                json.WriteNumber("row", chart.Row); json.WriteNumber("column", chart.Column);
+                json.WriteNumber("offsetX", chart.OffsetX); json.WriteNumber("offsetY", chart.OffsetY);
+                json.WriteStartArray("panes");
+                var origin = _workbench.Surface.TransformToVisual(_workbench).TransformPoint(new Point(0, 0));
+                foreach (var pane in _workbench.Surface.Viewport.Panes())
+                {
+                    var bounds = ChartGeometry.Bounds(chart, _workbench.Surface.Viewport, pane);
+                    if (!bounds.Intersects(pane.Clip)) continue;
+                    json.WriteStartObject(); json.WriteNumber("x", origin.X + bounds.X); json.WriteNumber("y", origin.Y + bounds.Y);
+                    json.WriteNumber("width", bounds.Width); json.WriteNumber("height", bounds.Height);
+                    json.WriteNumber("clipX", origin.X + pane.Clip.X); json.WriteNumber("clipY", origin.Y + pane.Clip.Y);
+                    json.WriteNumber("clipRight", origin.X + pane.Clip.Right); json.WriteNumber("clipBottom", origin.Y + pane.Clip.Bottom);
+                    json.WriteEndObject();
+                }
+                json.WriteEndArray(); json.WriteEndObject();
+            }
+            json.WriteEndArray();
+            json.WriteStartArray("pivots");
+            foreach (var pivot in _session.Sheet.PivotTables)
+            {
+                json.WriteStartObject(); json.WriteString("id", pivot.Id); json.WriteString("name", pivot.Name);
+                json.WriteString("source", pivot.SourceSheet + "!" + pivot.SourceRange);
+                json.WriteString("output", pivot.OutputRange); json.WriteNumber("rows", pivot.Rows.Count);
+                json.WriteNumber("columns", pivot.Columns.Count); json.WriteNumber("values", pivot.Values.Count);
+                json.WriteNumber("records", pivot.LastSourceRowCount);
+                WritePivotHierarchy(json, pivot);
+                json.WriteEndObject();
+            }
+            json.WriteEndArray();
+            WriteActiveCellGeometry(json);
             json.WriteStartObject("controls");
             foreach (var (name, element) in Controls())
             {
@@ -96,6 +138,7 @@ internal sealed class BrowserDiagnostics : IDisposable
                     json.WriteStartObject(name);
                     json.WriteNumber("x", point.X); json.WriteNumber("y", point.Y);
                     json.WriteNumber("width", element.ActualWidth); json.WriteNumber("height", element.ActualHeight);
+                    if (element is CheckBox check) json.WriteBoolean("checked", check.IsChecked == true);
                     if (element is TextBox text)
                     {
                         json.WriteString("text", text.Text);

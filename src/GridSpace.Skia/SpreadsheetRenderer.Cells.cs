@@ -38,27 +38,41 @@ public sealed partial class SpreadsheetRenderer
             }
         }
         var text = session.Sheet.ShowFormulas && cell.IsFormula ? cell.Input : conditional.HideValue ? "" : NumberFormatter.Format(value, style.NumberFormat);
+        var padding = 0f;
+        if (PivotOutlineGeometry.TryGetCell(session.Sheet, address, out _, out var outline))
+        {
+            padding = (float)((16 + 14 * outline.Indent) * viewport.Zoom);
+            if (outline.Group is not null)
+            {
+                var toggle = Rect(PivotOutlineGeometry.ToggleBounds(bounds, outline, viewport.Zoom));
+                Fill(canvas, toggle, SKColors.White);
+                Stroke(canvas, toggle, Color("#708078"));
+                var inset = (float)(3 * viewport.Zoom);
+                Line(canvas, toggle.Left + inset, toggle.MidY, toggle.Right - inset, toggle.MidY, Color("#31513F"));
+                if (!outline.Expanded) Line(canvas, toggle.MidX, toggle.Top + inset, toggle.MidX, toggle.Bottom - inset, Color("#31513F"));
+            }
+        }
         if (text.Length > 0)
         {
-            canvas.Save(); canvas.ClipRect(new SKRect(rect.Left + 3, rect.Top + 1, rect.Right - 3, rect.Bottom - 1));
+            canvas.Save(); canvas.ClipRect(new SKRect(Math.Min(rect.Right - 3, rect.Left + 3 + padding), rect.Top + 1, rect.Right - 3, rect.Bottom - 1));
             using var font = new SKFont(Typeface(style), (float)(style.FontSize * 96 / 72 * viewport.Zoom));
             var width = font.MeasureText(text);
             var alignment = style.Alignment == CellAlignment.General ? value.Kind == ValueKind.Number ? CellAlignment.Right : CellAlignment.Left : style.Alignment;
-            var x = alignment == CellAlignment.Right ? rect.Right - width - 5 : alignment == CellAlignment.Center ? rect.MidX - width / 2 : rect.Left + 5;
+            var x = alignment == CellAlignment.Right ? rect.Right - width - 5 : alignment == CellAlignment.Center ? rect.MidX - width / 2 : rect.Left + 5 + padding;
             var baseline = rect.MidY - (font.Metrics.Ascent + font.Metrics.Descent) / 2;
             if (style.Wrap)
             {
                 var lineHeight = font.Spacing;
                 baseline = rect.Top + 3 - font.Metrics.Ascent;
-                foreach (var part in Wrap(text, font, Math.Max(1, rect.Width - 10)).Take(128))
+                foreach (var part in Wrap(text, font, Math.Max(1, rect.Width - 10 - padding)).Take(128))
                 {
                     if (baseline + font.Metrics.Ascent > rect.Bottom) break;
-                    Text(canvas, part, rect.Left + 5, baseline, font, Color(style.Foreground)); baseline += lineHeight;
+                    Text(canvas, part, rect.Left + 5 + padding, baseline, font, Color(style.Foreground)); baseline += lineHeight;
                 }
             }
             else
             {
-                if (value.Kind == ValueKind.Number && width > rect.Width - 10) { text = new string('#', Math.Clamp((int)((rect.Width - 10) / Math.Max(1, font.MeasureText("#"))), 1, 100)); x = rect.Left + 5; }
+                if (value.Kind == ValueKind.Number && width > rect.Width - 10 - padding) { text = new string('#', Math.Clamp((int)((rect.Width - 10 - padding) / Math.Max(1, font.MeasureText("#"))), 1, 100)); x = rect.Left + 5 + padding; }
                 Text(canvas, text, x, baseline, font, Color(style.Foreground));
                 if (style.Underline) Line(canvas, x, baseline + 2, Math.Min(rect.Right - 3, x + width), baseline + 2, Color(style.Foreground));
             }
@@ -104,7 +118,9 @@ public sealed partial class SpreadsheetRenderer
             var value = session.Calculation.Evaluate(session.Sheet, address);
             var style = Conditions(session).Evaluate(session.Sheet, address, value).Style;
             using var font = new SKFont(Typeface(style), (float)(style.FontSize * 96 / 72));
-            var text = NumberFormatter.Format(value, style.NumberFormat); width = Math.Max(width, font.MeasureText(text) + 14);
+            var text = NumberFormatter.Format(value, style.NumberFormat);
+            var indentation = PivotOutlineGeometry.TryGetCell(session.Sheet, address, out _, out var outline) ? 16 + 14 * outline.Indent : 0;
+            width = Math.Max(width, font.MeasureText(text) + 14 + indentation);
         }
         return Math.Min(1000, width);
     }

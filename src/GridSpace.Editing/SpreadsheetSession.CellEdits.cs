@@ -29,6 +29,9 @@ public sealed partial class SpreadsheetSession
         }
         var patches = changes.Select(p => new CellPatch(p.Key, sheet.Get(p.Key), p.Value)).Where(p => p.Before != p.After).ToArray();
         if (patches.Length == 0) return;
+        foreach (var patch in patches)
+            if (patch.Before.Input != patch.After.Input && PivotAt(patch.Address) is { } pivot)
+                throw new InvalidOperationException("You cannot change a PivotTable result. Edit its source or fields (" + pivot.Name + ").");
         var replacingAnchors = patches.Where(p => p.Before.Input != p.After.Input).Select(p => p.Address).ToHashSet();
         var spills = Calculation.GetSpills(sheet);
         foreach (var patch in patches)
@@ -57,6 +60,19 @@ public sealed partial class SpreadsheetSession
 
     private void Replay(HistoryEntry entry, bool forward)
     {
+        if (entry.Chart is { } chart)
+        {
+            Book.ActiveSheetIndex = entry.SheetIndex;
+            ReplayChart(chart, forward);
+            return;
+        }
+        if (entry.Pivot is { } pivot)
+        {
+            Book.ActiveSheetIndex = entry.SheetIndex;
+            foreach (var cell in entry.Patches ?? []) Sheet.Set(cell.Address, forward ? cell.After : cell.Before);
+            ReplayPivot(pivot, forward);
+            return;
+        }
         if (entry.Patches is not { } patches) { Restore(forward ? entry.After : entry.Before); return; }
         Book.ActiveSheetIndex = entry.SheetIndex;
         foreach (var patch in patches) Sheet.Set(patch.Address, forward ? patch.After : patch.Before);

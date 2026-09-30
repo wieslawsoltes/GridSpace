@@ -18,6 +18,9 @@ public static partial class XlsxWorkbook
         var styles = ReadStyles(zip); var relationships = Relationships(zip, "xl/workbook.xml");
         var book = new Workbook { Sheets = [], Title = "Imported workbook" };
         var warnings = new List<string>();
+        var pivotCaches = (xml.Root.Element(S + "pivotCaches")?.Elements(S + "pivotCache") ?? [])
+            .Where(c => relationships.ContainsKey((string?)c.Attribute(R + "id") ?? ""))
+            .ToDictionary(c => Int(c.Attribute("cacheId"), -1), c => relationships[(string)c.Attribute(R + "id")!]);
         var differentials = ReadDifferentials(zip, warnings);
         var explicitVisibility = new HashSet<Worksheet>();
         var dynamicMetadata = ReadDynamicMetadata(zip, relationships);
@@ -84,12 +87,12 @@ public static partial class XlsxWorkbook
             if (ReadDataToolExtension(root, sheet)) explicitVisibility.Add(sheet);
             if (root.Element(S + "tableParts") is not null) warnings.Add("Excel tables are imported as cells; structured references and table metadata are not supported.");
             ReadCharts(zip, path, root, sheet, warnings);
+            ReadPivots(zip, path, root, sheet, pivotCaches, warnings);
             book.Sheets.Add(sheet);
         }
         foreach (var name in xml.Root.Element(S + "definedNames")?.Elements(S + "definedName") ?? [])
             if (name.Attribute("localSheetId") is null && ((string?)name.Attribute("name")) is { } n && !n.StartsWith("_xlnm.")) book.Names[n] = name.Value;
         book.ActiveSheetIndex = Int(xml.Root.Element(S + "bookViews")?.Element(S + "workbookView")?.Attribute("activeTab"));
-        if (zip.Entries.Any(e => e.FullName.Contains("pivot", StringComparison.OrdinalIgnoreCase))) warnings.Add("Pivot tables and data models are not imported.");
         if (zip.Entries.Any(e => e.FullName.Contains("externalLink", StringComparison.OrdinalIgnoreCase))) warnings.Add("External links were not followed.");
         if (zip.Entries.Any(e => e.FullName.Contains("vbaProject", StringComparison.OrdinalIgnoreCase))) warnings.Add("Macros were ignored and will not be saved.");
         warnings.Add("XLSX interoperability is a subset. Use a native .gridspace copy to preserve GridSpace-specific state; keep the original Excel file.");

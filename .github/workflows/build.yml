@@ -25,6 +25,8 @@ jobs:
           dotnet build tools/GridSpace.Benchmarks -c Release
           mkdir -p artifacts/benchmarks
           dotnet run --project tools/GridSpace.Benchmarks -c Release --no-build -- 10000 > artifacts/benchmarks/engine.json
+          dotnet build tools/GridSpace.AnalyticsBenchmarks -c Release
+          dotnet run --project tools/GridSpace.AnalyticsBenchmarks -c Release --no-build -- 10000 > artifacts/benchmarks/charts-pivots.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

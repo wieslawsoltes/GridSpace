@@ -23,6 +23,7 @@ public sealed partial class SpreadsheetSession
 
     private void ApplyAxisEdit(AxisEdit edit)
     {
+        CheckAnalyticsAxisEdit(edit);
         Perform((edit.IsDeletion ? "Delete " : "Insert ") + (edit.Rows ? "rows" : "columns"), () =>
         {
             var name = Sheet.Name;
@@ -124,18 +125,7 @@ public sealed partial class SpreadsheetSession
             rules.Add(updated);
         }
         Sheet.ConditionalFormats = rules;
-        var charts = new List<ChartSpec>();
-        foreach (var chart in Sheet.Charts)
-        {
-            if (MapText(chart.Range) is not { } range) continue;
-            var anchor = edit.Map(new CellAddress(chart.Row, chart.Column));
-            if (anchor is null && !edit.IsDeletion) throw new InvalidOperationException("Insertion would move a chart outside the worksheet.");
-            chart.Range = range;
-            if (edit.Rows) chart.Row = anchor?.Row ?? Math.Min(edit.Position, CellAddress.MaxRows - 1);
-            else chart.Column = anchor?.Column ?? Math.Min(edit.Position, CellAddress.MaxColumns - 1);
-            charts.Add(chart);
-        }
-        Sheet.Charts = charts;
+        TransformAnalytics(edit);
     }
 
     private void RewriteWorkbookReferences(Func<string, string, string> transform)

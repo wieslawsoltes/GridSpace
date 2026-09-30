@@ -11,6 +11,8 @@ public sealed class Workbook
     public Dictionary<string, string> Names { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public int ActiveSheetIndex { get; set; }
     [JsonIgnore] public long Revision { get; private set; }
+    [JsonIgnore] public long DrawingRevision { get; private set; }
+    public void TouchDrawings() => DrawingRevision++;
     [JsonIgnore] public Worksheet ActiveSheet => Sheets[Math.Clamp(ActiveSheetIndex, 0, Sheets.Count - 1)];
     public Workbook() => Attach();
     private const int JournalCapacity = 8192;

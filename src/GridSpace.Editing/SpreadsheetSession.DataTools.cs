@@ -79,6 +79,7 @@ public sealed partial class SpreadsheetSession
     public void Sort(IReadOnlyList<SortLevel> levels, bool header = true, bool caseSensitive = false, CellRange? range = null)
     {
         var area = (range ?? DataRange()).Normalized;
+        RejectPivotWrite(area);
         if (levels.Count is < 1 or > 64 || levels.Any(l => l.Column < area.Left || l.Column > area.Right) || levels.Select(l => l.Column).Distinct().Count() != levels.Count)
             throw new ArgumentException("Choose 1–64 distinct sort columns inside the selected data range.");
         if (area.Count > 100_000) throw new InvalidOperationException("Sorting is limited to 100,000 cells.");

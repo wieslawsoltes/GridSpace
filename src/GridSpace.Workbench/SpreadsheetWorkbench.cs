@@ -25,7 +25,7 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
         HorizontalContentAlignment = HorizontalAlignment.Stretch; VerticalContentAlignment = VerticalAlignment.Stretch; Background = OfficeTheme.Brush("#FFFFFF");
         var root = new Grid();
         foreach (var height in new[] { new GridLength(46), new GridLength(140), new GridLength(36), new GridLength(1, GridUnitType.Star), new GridLength(32), new GridLength(27) }) root.RowDefinitions.Add(new RowDefinition { Height = height });
-        Add(TitleBar(), 0); Add(_ribbon, 1); Add(_formula, 2); Add(Surface, 3); Add(_tabs, 4); Add(_statusBar, 5); Content = root;
+        Add(TitleBar(), 0); Add(_ribbon, 1); Add(_formula, 2); Add(AnalyticsSurface(), 3); Add(_tabs, 4); Add(_statusBar, 5); Content = root;
         _ribbon.SetTabs(WorkbookRibbon.Create()); _ribbon.CommandRequested += RunCommand;
         _formula.EditingStarted += () => _formulaAddress = Session.ActiveCell;
         _formula.CommitInput = text => Try(() => Session.SetInput(text, _formulaAddress));
@@ -44,6 +44,9 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
                 Session.Select(range);
             }
             else Session.Select(address);
+            // The Name box targets cells, not the selected floating drawing. Transfer
+            // editing ownership before reveal so F2 and navigation reach the cell.
+            Surface.SelectChart(null);
             Surface.RevealSelection();
         });
         _formula.FocusGridRequested += Surface.FocusGrid; _formula.FunctionRequested += () => RunCommand("function");
@@ -86,8 +89,8 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
     {
         _title.Text = Session.Book.Title + (Session.IsDirty ? " •" : ""); _title.TextTrimming = TextTrimming.CharacterEllipsis;
         _formula.Update(Session.Selection.ToString(), Session.FormulaInput);
-        _formula.SetReadOnly(Session.IsSpillFollower);
-        _tabs.Update(Session.Book); UpdateStatus();
+        _formula.SetReadOnly(Session.IsSpillFollower || Session.ActivePivot is not null);
+        _tabs.Update(Session.Book); UpdateStatus(); UpdateAnalytics();
     }
     private void UpdateStatus() => _statusBar.Update(_status, Session.SelectionSummary(), Surface.Viewport.Zoom, _statusError);
     public void ShowStatus(string message, bool error = false) { _status = message; _statusError = error; UpdateStatus(); }
@@ -111,7 +114,7 @@ public sealed partial class SpreadsheetWorkbench : UserControl, IDisposable
         try
         {
             if (!_formula.Commit() || !Surface.CommitEdit()) return;
-            if (!await ExecuteDataToolAsync(id)) await ExecuteCoreAsync(id);
+            if (!ExecuteAnalytics(id) && !await ExecuteDataToolAsync(id)) await ExecuteCoreAsync(id);
             Update();
         }
         catch (Exception error) { ShowStatus(error.Message, true); }

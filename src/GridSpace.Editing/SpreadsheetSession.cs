@@ -10,10 +10,12 @@ public sealed partial class SpreadsheetSession
     private sealed record HistoryEntry(string Name, string Before, string After, CellRange Selection)
     {
         public CellPatch[]? Patches { get; init; }
+        public ChartPatch? Chart { get; init; }
+        public PivotPatch? Pivot { get; init; }
         public int SheetIndex { get; init; }
-        public long Size => Patches is { } patches
+        public long Size => (Chart?.Size ?? 0) + (Pivot?.Size ?? 0) + (Patches is { } patches
             ? patches.Sum(p => 256L + 2L * (p.Before.Input.Length + p.After.Input.Length + (p.Before.Note?.Length ?? 0) + (p.After.Note?.Length ?? 0)))
-            : 2L * (Before.Length + After.Length);
+            : 2L * (Before.Length + After.Length));
     }
     private readonly List<HistoryEntry> _undo = [];
     private readonly Stack<HistoryEntry> _redo = [];
