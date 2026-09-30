@@ -23,9 +23,12 @@ test('resizes transposed categories over filter headers without opening a filter
   await expect.poll(async () => !!(await state(page)).selectedChart).toBe(true);
   await click(page, 'Command-chart-switch'); await click(page, 'Command-chart-customize');
   await expect.poll(async () => (await state(page)).chartSources?.find(s => s.part === 'Categories')?.range).toBe('C5:F5');
+  // Expose the corner: the adjacent chart's own resize handle legitimately has
+  // higher hit priority until the drawing is nudged away from the source edge.
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(async () => (await state(page)).chartSources.find(s => s.part === 'Categories')?.targets.some(t => t.handle === 'End')).toBe(true);
   const category = (await state(page)).chartSources.find(s => s.part === 'Categories');
   const grip = category.targets.find(t => t.handle === 'End');
-  expect(grip).toBeTruthy();
   await page.mouse.move(grip.x, grip.y); await page.mouse.down();
   await expect.poll(async () => (await state(page)).chartSourceEditing).toBe(true);
   expect((await state(page)).overlayOpen).toBe(false);

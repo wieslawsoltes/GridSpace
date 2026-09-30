@@ -30,8 +30,14 @@ public static class ChartSourceEditing
             result.Add(Binding(ChartSourcePart.SeriesValues, i, CellRange.Parse(chart.Series[i].Values).Normalized));
         return result.AsReadOnly();
 
-        ChartSourceBinding Binding(ChartSourcePart part, int index, CellRange range) =>
-            new(part, index, range, range.Top == range.Bottom && (range.Count > 1 || chart.SeriesInRows));
+        ChartSourceBinding Binding(ChartSourcePart part, int index, CellRange range)
+        {
+            var hint = part == ChartSourcePart.Categories
+                ? chart.Categories is null ? null : chart.CategoriesHorizontal
+                : chart.Series[index].ValuesHorizontal;
+            var horizontal = range.Count == 1 ? hint ?? chart.SeriesInRows : range.Top == range.Bottom;
+            return new(part, index, range, horizontal);
+        }
     }
 
     public static ChartSpec Replace(ChartSpec chart, string hostSheet, ChartSourceBinding binding, CellRange replacement)
@@ -48,9 +54,16 @@ public static class ChartSourceEditing
         switch (binding.Part)
         {
             case ChartSourcePart.DataRange: next.Range = replacement.ToString(); break;
-            case ChartSourcePart.Categories: next.Categories = replacement.ToString(); break;
+            case ChartSourcePart.Categories:
+                next.Categories = replacement.ToString();
+                next.CategoriesHorizontal = replacement.Count == 1 ? binding.Horizontal : null;
+                break;
             case ChartSourcePart.SeriesValues:
-                next.Series[binding.SeriesIndex] = next.Series[binding.SeriesIndex] with { Values = replacement.ToString() };
+                next.Series[binding.SeriesIndex] = next.Series[binding.SeriesIndex] with
+                {
+                    Values = replacement.ToString(),
+                    ValuesHorizontal = replacement.Count == 1 ? binding.Horizontal : null
+                };
                 break;
             default: throw new ArgumentOutOfRangeException(nameof(binding));
         }

@@ -10,6 +10,8 @@ public sealed record ChartSeries
 {
     public string Name { get; init; } = "";
     public string Values { get; init; } = "B2:B5";
+    /// <summary>Orientation hint for a one-cell vector. Larger ranges determine their own orientation.</summary>
+    public bool? ValuesHorizontal { get; init; }
     public string Color { get; init; } = "#4472C4";
     public ChartKind? Kind { get; init; }
     public bool SecondaryAxis { get; init; }
@@ -28,6 +30,8 @@ public sealed record ChartSpec
     public bool SeriesInRows { get; set; }
     public bool HasHeaders { get; set; } = true;
     public string? Categories { get; set; }
+    /// <summary>Orientation hint for a one-cell category vector; not a viewport or gesture coordinate.</summary>
+    public bool? CategoriesHorizontal { get; set; }
     public List<ChartSeries> Series { get; set; } = [];
     public ChartGrouping Grouping { get; set; }
     public ChartLegendPosition Legend { get; set; } = ChartLegendPosition.Bottom;

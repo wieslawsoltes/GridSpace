@@ -29,9 +29,13 @@ public sealed partial class SpreadsheetSession
         UpdateChart(id, current => current with
         {
             Categories = data.CategoriesRange,
+            CategoriesHorizontal = CellRange.Parse(data.CategoriesRange).Count == 1
+                ? current.Categories is null ? current.SeriesInRows : current.CategoriesHorizontal ?? current.SeriesInRows
+                : null,
             Series = data.Series.Select((series, i) => new ChartSeries
             {
                 Name = series.Name, Values = series.ValuesRange,
+                ValuesHorizontal = CellRange.Parse(series.ValuesRange).Count == 1 ? current.SeriesInRows : null,
                 Color = ChartDataResolver.Palette[i % ChartDataResolver.Palette.Length]
             }).ToList()
         }, "Customize chart series");
