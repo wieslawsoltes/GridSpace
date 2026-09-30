@@ -22,7 +22,10 @@ async function sourceChart(page) {
 }
 async function grip(page, part, index = -1, handle = 'End') {
   await expect.poll(async () => (await state(page)).chartSources?.find(s => s.part === part && s.index === index)?.targets.some(t => t.handle === handle)).toBe(true);
-  return (await state(page)).chartSources.find(s => s.part === part && s.index === index).targets.find(t => t.handle === handle);
+  const targets = (await state(page)).chartSources.find(s => s.part === part && s.index === index).targets.filter(t => t.handle === handle);
+  // Exercise a pure move away from the horizontal edge-scroll band. A separate
+  // test below deliberately enters the scrolling band and checks cancellation.
+  return handle === 'Move' ? targets.at(-1) : targets[0];
 }
 async function start(page, target, dx, dy) {
   await page.mouse.move(target.x, target.y); await page.mouse.down();
@@ -104,9 +107,11 @@ test('rejects an invalid automatic shape instead of committing the last valid pr
   const id = await sourceChart(page); const before = await state(page);
   const end = await grip(page, 'DataRange'); const startGrip = await grip(page, 'DataRange', -1, 'Start');
   await start(page, end, 0, 24);
-  await page.mouse.move(startGrip.x + 2, end.y, { steps: 6 });
+  // Inside the first source column, but outside the viewport edge-scroll band.
+  await page.mouse.move(startGrip.x + 24, end.y, { steps: 6 });
   await expect.poll(async () => !!(await state(page)).chartSourcePreviewError).toBe(true);
   await page.mouse.up();
+  await expect.poll(async () => (await state(page)).chartSourceEditing).toBe(false);
   expect((await state(page)).charts.find(c => c.id === id).range).toBe('B5:F17');
   expect((await state(page)).historyBytes).toBe(before.historyBytes);
 });
@@ -119,9 +124,9 @@ test('keeps PivotChart source ranges report-owned', async ({ page }) => {
   await page.mouse.click(Math.max(p.clipX + 12, p.x + 35), Math.max(p.clipY + 12, p.y + 20));
   await expect.poll(async () => (await state(page)).selectedChart).toBe(chart.id);
   await click(page, 'Command-chart-source');
+  await expect.poll(async () => (await state(page)).status).toContain('PivotTable');
   expect((await state(page)).chartSources).toEqual([]);
   expect((await state(page)).charts.find(c => c.id === chart.id).pivotId).toBe(chart.pivotId);
-  expect((await state(page)).status).toContain('PivotTable');
 });
 
 test('cancels a source preview when zoom changes before release', async ({ page }) => {
@@ -130,6 +135,17 @@ test('cancels a source preview when zoom changes before release', async ({ page 
   await page.keyboard.down('Control'); await page.mouse.wheel(0, -120); await page.keyboard.up('Control');
   await expect.poll(async () => (await state(page)).zoom).toBeGreaterThan(before.zoom);
   await page.mouse.up();
+  await expect.poll(async () => (await state(page)).chartSourceEditing).toBe(false);
+  expect((await state(page)).charts.find(c => c.id === id).range).toBe('B5:F17');
+  expect((await state(page)).historyBytes).toBe(before.historyBytes);
+});
+
+test('edge scrolls a source preview and cancels without committing it', async ({ page }) => {
+  const id = await sourceChart(page); const before = await state(page);
+  const target = await grip(page, 'DataRange'); const grid = before.controls.WorksheetGrid;
+  await start(page, target, 0, grid.y + grid.height - 18 - target.y);
+  await expect.poll(async () => (await state(page)).scrollY).toBeGreaterThan(before.scrollY);
+  await page.keyboard.press('Escape'); await page.mouse.up();
   await expect.poll(async () => (await state(page)).chartSourceEditing).toBe(false);
   expect((await state(page)).charts.find(c => c.id === id).range).toBe('B5:F17');
   expect((await state(page)).historyBytes).toBe(before.historyBytes);

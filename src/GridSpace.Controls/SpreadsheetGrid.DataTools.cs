@@ -17,18 +17,22 @@ public sealed partial class SpreadsheetGrid
         var filter = new KeyboardAccelerator { Key = VirtualKey.Down, Modifiers = VirtualKeyModifiers.Menu };
         filter.Invoked += (_, e) =>
         {
-            if (Session is null || IsEditing) return;
+            if (Session is null || IsEditing || IsChartSourceEditing) return;
             FilterRequested?.Invoke(Session.ActiveCell.Column); e.Handled = true;
         };
         KeyboardAccelerators.Add(filter);
         var toggle = new KeyboardAccelerator { Key = VirtualKey.L, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift };
-        toggle.Invoked += (_, e) => { if (!IsEditing) { CommandRequested?.Invoke("toggle-filter"); e.Handled = true; } };
+        toggle.Invoked += (_, e) => { if (!IsEditing && !IsChartSourceEditing) { CommandRequested?.Invoke("toggle-filter"); e.Handled = true; } };
         KeyboardAccelerators.Add(toggle);
     }
 
     private void DataToolPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (Session is null || !CellRange.TryParse(Session.Sheet.FilterRange, out var range)) return;
+        // This routed handler sees handled cell presses to open filters. A captured
+        // drawing/source gesture already owns its pointer, even when a transposed
+        // category grip lies directly over a filter-header button.
+        if (Session is null || IsChartSourceEditing || _chartDragStart is not null ||
+            !CellRange.TryParse(Session.Sheet.FilterRange, out var range)) return;
         var point = e.GetCurrentPoint(_canvas);
         if (point.Properties.IsRightButtonPressed) return;
         var hit = Viewport.HitTest(point.Position.X, point.Position.Y);
